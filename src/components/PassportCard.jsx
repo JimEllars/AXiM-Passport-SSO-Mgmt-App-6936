@@ -1,4 +1,5 @@
 import * as FiIcons from 'react-icons/fi';
+import { motion, AnimatePresence } from 'framer-motion';
 import SafeIcon from '../common/SafeIcon';
 import BrandMark from './BrandMark';
 import AuthButton from './AuthButton';
@@ -98,8 +99,15 @@ function PassportCard({
         </AuthButton>
       </section>
 
+      <AnimatePresence mode="wait">
       {methodSelected && !busy && (
-        <div className="verification-panel">
+        <motion.div
+          className="verification-panel"
+          initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+          animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+          exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+          transition={{ duration: 0.3 }}
+        >
           <div className="verification-heading">
             <span>
               {walletFinalVerification ? 'FINAL SECURITY CHECK' : 'SECURITY CHECK'}
@@ -120,15 +128,28 @@ function PassportCard({
             onToken={setTurnstileToken}
             onError={onVerificationError}
           />
-        </div>
+        </motion.div>
       )}
 
       {busy && (
-        <div className="processing-state" role="status" aria-live="polite">
-          <span className="processing-dot" />
-          Establishing a protected Passport session…
-        </div>
+        <motion.div
+          className="processing-state"
+          role="status"
+          aria-live="polite"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="cyber-loader">
+            <motion.div className="cyber-bar" animate={{ scaleX: [0, 1, 0], opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }} />
+            <motion.div className="cyber-bar" animate={{ scaleX: [0, 1, 0], opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, delay: 0.2, repeat: Infinity, ease: "easeInOut" }} />
+            <motion.div className="cyber-bar" animate={{ scaleX: [0, 1, 0], opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, delay: 0.4, repeat: Infinity, ease: "easeInOut" }} />
+          </div>
+          <span>Establishing a protected Passport session…</span>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {error && (
         <div className="error-message" role="alert">
