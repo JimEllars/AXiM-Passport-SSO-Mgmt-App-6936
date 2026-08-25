@@ -77,7 +77,7 @@ function PassportCard({
       )}
 
       <section className="auth-options" aria-label="Authentication options">
-        <AuthButton icon={FiMail} onClick={onGoogle} disabled={busy || !redirectUrl}>
+        <AuthButton icon={FiMail} onClick={onGoogle} disabled={busy || !redirectUrl} isLoading={selectedMethod === 'google' && busy}>
           {selectedMethod === 'google' && busy
             ? 'Opening Google…'
             : 'Continue with Google'}
@@ -91,6 +91,7 @@ function PassportCard({
           icon={FiHexagon}
           onClick={onWallet}
           disabled={busy || !redirectUrl}
+          isLoading={selectedMethod === 'wallet' && busy}
           secondary
         >
           {selectedMethod === 'wallet' && busy

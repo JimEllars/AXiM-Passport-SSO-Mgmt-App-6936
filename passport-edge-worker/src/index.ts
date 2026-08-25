@@ -16,12 +16,24 @@ const corsHeaders = {
 function sanitizeContext(context: any) {
     if (!context) return context;
     const sanitized = { ...context };
-    const sensitiveKeys = ['signature', 'token', 'turnstileToken', 'cf_turnstile_response', 'cf-turnstile-response'];
+    const sensitiveKeys = ['signature', 'token', 'turnstileToken', 'cf_turnstile_response', 'cf-turnstile-response', 'nonce', 'jti', 'message'];
+
     for (const key of sensitiveKeys) {
         if (key in sanitized) {
             sanitized[key] = '***REDACTED***';
         }
     }
+
+    if (sanitized.address) {
+        sanitized.wallet_address_prefix = typeof sanitized.address === 'string' ? sanitized.address.substring(0, 6) + '...' : 'invalid_address';
+        delete sanitized.address;
+    }
+
+    if (sanitized.error) {
+        sanitized.error_type = typeof sanitized.error === 'string' ? sanitized.error : (sanitized.error.name || 'unknown_error');
+        // keep the error message, but the prompt says to pass error_type. Let's map it.
+    }
+
     return sanitized;
 }
 
@@ -202,7 +214,7 @@ export default {
                         });
                     }
                 } catch (error: any) {
-                    logger.error('Signature verification failed', { path: url.pathname, address, ip, error: error.message });
+                    logger.error('Signature verification failed', { path: url.pathname, address, ip, error_type: error.name || 'VerificationError' });
                     return new Response(JSON.stringify({ error: 'Signature verification failed' }), {
                         status: 400,
                         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

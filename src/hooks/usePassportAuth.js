@@ -61,6 +61,7 @@ function usePassportAuth(redirectUrl) {
   }, [resetVerification]);
 
   const startGoogle = useCallback(() => {
+    if (busy) return;
     if (!selectMethod('google')) {
       return;
     }
@@ -70,11 +71,16 @@ function usePassportAuth(redirectUrl) {
       setBusy(true);
       window.location.assign(getGoogleAuthUrl(redirectUrl, turnstileToken));
     } catch (authenticationError) {
-      fail(authenticationError.message || 'Google authentication failed.');
+      if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
+        fail('Authentication was cancelled. Please try again.');
+      } else {
+        fail(authenticationError.message || 'Google authentication failed.');
+      }
     }
   }, [ensureReady, fail, redirectUrl, selectMethod, turnstileToken]);
 
   const startWallet = useCallback(async () => {
+    if (busy) return;
     if (!selectMethod('wallet')) {
       return;
     }
@@ -122,7 +128,11 @@ function usePassportAuth(redirectUrl) {
 
       window.location.assign(handoffUrl);
     } catch (authenticationError) {
-      fail(authenticationError.message || 'Wallet authentication failed.');
+      if (authenticationError.code === 4001 || (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel'))) {
+        fail('Wallet signature was cancelled. Please try again.');
+      } else {
+        fail(authenticationError.message || 'Wallet authentication failed.');
+      }
     }
   }, [
     ensureReady,
