@@ -3,16 +3,27 @@ import SafeIcon from '../common/SafeIcon';
 import BrandMark from './BrandMark';
 import AuthButton from './AuthButton';
 import TurnstileBox from './TurnstileBox';
+import SecurityStatus from './SecurityStatus';
 
-const { FiGlobe, FiHexagon, FiMail, FiLock, FiX } = FiIcons;
+const {
+  FiGlobe,
+  FiHexagon,
+  FiMail,
+  FiLock,
+  FiX,
+  FiAlertCircle,
+} = FiIcons;
 
 function PassportCard({
   redirectUrl,
+  redirectError,
+  readiness,
   selectedMethod,
   busy,
   error,
   resetKey,
   setTurnstileToken,
+  onVerificationError,
   onGoogle,
   onWallet,
   onCancel,
@@ -23,8 +34,17 @@ function PassportCard({
   return (
     <main className="passport-card">
       <BrandMark />
-      <div className="eyebrow"><span /> SECURE ECOSYSTEM ACCESS</div>
-      <h1>One identity.<br /><em>Every AXiM.</em></h1>
+
+      <div className="eyebrow">
+        <span /> SECURE ECOSYSTEM ACCESS
+      </div>
+
+      <h1>
+        One identity.
+        <br />
+        <em>Every AXiM.</em>
+      </h1>
+
       <p className="intro">
         Your secure gateway to the AXiM ecosystem. Sign in once and move
         seamlessly between every workspace.
@@ -36,27 +56,27 @@ function PassportCard({
         <b>PHASE 01</b>
       </div>
 
+      <SecurityStatus readiness={readiness} />
+
+      {!redirectUrl && (
+        <div className="configuration-warning" role="alert">
+          <SafeIcon icon={FiAlertCircle} />
+          <span>{redirectError || 'An approved application callback is required.'}</span>
+        </div>
+      )}
+
       <section className="auth-options" aria-label="Authentication options">
-        <AuthButton
-          icon={FiMail}
-          onClick={onGoogle}
-          disabled={busy}
-        >
+        <AuthButton icon={FiMail} onClick={onGoogle} disabled={busy || !redirectUrl}>
           {selectedMethod === 'google' && busy
             ? 'Opening Google…'
-            : selectedMethod === 'google'
-              ? 'Continue with Google'
-              : 'Continue with Google'}
+            : 'Continue with Google'}
         </AuthButton>
 
-        <div className="or-divider"><span>OR CONNECT</span></div>
+        <div className="or-divider">
+          <span>OR CONNECT</span>
+        </div>
 
-        <AuthButton
-          icon={FiHexagon}
-          onClick={onWallet}
-          disabled={busy}
-          secondary
-        >
+        <AuthButton icon={FiHexagon} onClick={onWallet} disabled={busy || !redirectUrl} secondary>
           {selectedMethod === 'wallet' && busy
             ? 'Connecting wallet…'
             : 'Connect wallet'}
@@ -71,16 +91,30 @@ function PassportCard({
               <SafeIcon icon={FiX} />
             </button>
           </div>
-          <p>Complete the check before continuing securely.</p>
+
+          <p>Complete the managed verification before continuing.</p>
+
           <TurnstileBox
             resetKey={resetKey}
             onToken={setTurnstileToken}
-            onError={() => setTurnstileToken('')}
+            onError={onVerificationError}
           />
         </div>
       )}
 
-      {error && <div className="error-message" role="alert">{error}</div>}
+      {busy && (
+        <div className="processing-state" role="status" aria-live="polite">
+          <span className="processing-dot" />
+          Establishing a protected Passport session…
+        </div>
+      )}
+
+      {error && (
+        <div className="error-message" role="alert">
+          <SafeIcon icon={FiAlertCircle} />
+          <span>{error}</span>
+        </div>
+      )}
 
       <div className="card-footer">
         <SafeIcon icon={FiLock} />
