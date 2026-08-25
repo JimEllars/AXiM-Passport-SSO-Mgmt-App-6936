@@ -124,6 +124,37 @@ function createHandoffUrl(redirectUrl, token) {
   return url.toString();
 }
 
+
+export function publishTelemetry(event, payload = {}) {
+  try {
+    if (!workerUrl) return;
+
+    // Filter out any potential sensitive data if it was passed by mistake
+    const safePayload = { ...payload };
+    delete safePayload.token;
+    delete safePayload.turnstileToken;
+    delete safePayload.credential;
+
+    // We intentionally don't await this as telemetry should be non-blocking
+    fetch(`${workerUrl}/api/v1/telemetry`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        event,
+        timestamp: new Date().toISOString(),
+        ...safePayload
+      }),
+      keepalive: true,
+    }).catch(() => {
+      // Ignore telemetry errors silently so as not to disrupt user flow
+    });
+  } catch (error) {
+    // Failsafe
+  }
+}
+
 export function getPassportReadiness(redirectUrl) {
   return {
     redirect: Boolean(redirectUrl),
@@ -141,6 +172,8 @@ export async function requestWalletChallenge({
 }) {
   requireTurnstile();
   assertApprovedRedirect(redirectUrl);
+
+  publishTelemetry('wallet_challenge_initiated', { address, chainId, redirect: redirectUrl });
 
   const result = await post('/api/v1/auth/wallet/challenge', {
     address,
@@ -165,6 +198,8 @@ export async function authenticate({
   requireTurnstile();
   assertApprovedRedirect(redirectUrl);
 
+  publishTelemetry('auth_initiated', { method, redirect: redirectUrl });
+
   const result = await post('/api/v1/auth/verify', {
     method,
     credential,
@@ -183,6 +218,8 @@ export function getGoogleAuthUrl(redirectUrl, turnstileToken) {
   if (!turnstileToken) {
     throw new Error('Complete the security verification before continuing.');
   }
+
+  publishTelemetry('google_auth_initiated', { redirect: redirectUrl });
 
   const url = new URL(`${workerUrl}/api/v1/auth/google`);
   url.searchParams.set('redirect', redirectUrl);
