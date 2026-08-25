@@ -1,271 +1,313 @@
 import { verifyMessage } from 'viem';
 
-export interface Env {
-	TURNSTILE_SECRET_KEY: string;
-    PASSPORT_SESSIONS: KVNamespace;
-    JWT_SECRET: string;
+interface Env {
+  ALLOWED_REDIRECT_ORIGINS: string;
+  AUTH_STATE: DurableObjectNamespace;
+  FRONTEND_ORIGINS: string;
+  JWT_SECRET: string;
+  PASSPORT_ORIGIN: string;
+  SUPABASE_ANON_KEY: string;
+  SUPABASE_URL: string;
+  TURNSTILE_ACTION: string;
+  TURNSTILE_SECRET_KEY: string;
+  WALLET_CHAIN_ID: string;
 }
 
-const corsHeaders = {
-	'Access-Control-Allow-Origin': '*',
-	'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
-	'Access-Control-Max-Age': '86400',
-	'Access-Control-Allow-Headers': 'Content-Type, Authorization, cf-turnstile-response',
-};
-
-function sanitizeContext(context: any) {
-    if (!context) return context;
-    const sanitized = { ...context };
-    const sensitiveKeys = ['signature', 'token', 'turnstileToken', 'cf_turnstile_response', 'cf-turnstile-response', 'nonce', 'jti', 'message'];
-
-    for (const key of sensitiveKeys) {
-        if (key in sanitized) {
-            sanitized[key] = '***REDACTED***';
-        }
-    }
-
-    if (sanitized.address) {
-        sanitized.wallet_address_prefix = typeof sanitized.address === 'string' ? sanitized.address.substring(0, 6) + '...' : 'invalid_address';
-        delete sanitized.address;
-    }
-
-    if (sanitized.error) {
-        sanitized.error_type = typeof sanitized.error === 'string' ? sanitized.error : (sanitized.error.name || 'unknown_error');
-        // keep the error message, but the prompt says to pass error_type. Let's map it.
-    }
-
-    return sanitized;
+interface AuthRecord {
+  address?: string;
+  chainId?: number;
+  codeVerifier?: string;
+  expiresAt: number;
+  redirectUrl?: string;
 }
 
-const logger = {
-    info: (message: string, context?: any) => {
-        console.log(JSON.stringify({ level: 'info', message, timestamp: new Date().toISOString(), context: sanitizeContext(context) }));
-    },
-    error: (message: string, context?: any) => {
-        console.error(JSON.stringify({ level: 'error', message, timestamp: new Date().toISOString(), context: sanitizeContext(context) }));
-    }
-};
-
-async function verifyTurnstile(token: string, secret: string, ip: string): Promise<boolean> {
-	const formData = new FormData();
-	formData.append('secret', secret);
-	formData.append('response', token);
-	formData.append('remoteip', ip);
-
-	const url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
-	const result = await fetch(url, {
-		body: formData,
-		method: 'POST',
-	});
-
-	const outcome = await result.json() as any;
-	return outcome.success;
+interface TurnstileResult {
+  action?: string;
+  hostname?: string;
+  success: boolean;
 }
 
-function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
+const encoder = new TextEncoder();
+const JSON_HEADERS = { 'Content-Type': 'application/json; charset=UTF-8' };
+const ETHEREUM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
+const HEX_SIGNATURE = /^0x[a-fA-F0-9]{130}$/;
+
+export class AuthState implements DurableObject {
+  constructor(private readonly state: DurableObjectState) {}
+
+  async fetch(request: Request): Promise<Response> {
+    const { operation, key, value } = await request.json<{ operation: string; key: string; value?: AuthRecord }>();
+
+    if (operation === 'put' && value) {
+      await this.state.storage.put(key, value);
+      return new Response(null, { status: 204 });
     }
-    return btoa(binary)
-        .replace(/=/g, '')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_');
+
+    if (operation === 'consume') {
+      const record = await this.state.storage.get<AuthRecord>(key);
+      if (!record || record.expiresAt < Date.now()) {
+        await this.state.storage.delete(key);
+        return Response.json({ record: null });
+      }
+
+      await this.state.storage.delete(key);
+      return Response.json({ record });
+    }
+
+    return new Response('Invalid state operation', { status: 400 });
+  }
 }
 
-async function signJWT(payload: any, secret: string): Promise<string> {
-    const encoder = new TextEncoder();
+function log(event: string, metadata: Record<string, string | number | boolean> = {}) {
+  console.log(JSON.stringify({ event, timestamp: new Date().toISOString(), ...metadata }));
+}
 
-    const header = {
-        alg: 'HS256',
-        typ: 'JWT'
-    };
+function base64UrlEncode(value: ArrayBuffer | Uint8Array): string {
+  const bytes = new Uint8Array(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
 
-    const encodedHeader = base64UrlEncode(encoder.encode(JSON.stringify(header)));
-    const encodedPayload = base64UrlEncode(encoder.encode(JSON.stringify(payload)));
+function originFrom(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
 
-    const dataToSign = `${encodedHeader}.${encodedPayload}`;
+function approvedRedirect(env: Env, value: unknown): string | null {
+  if (typeof value !== 'string') return null;
 
-    const key = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(secret),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-    );
+  try {
+    const url = new URL(value);
+    const approvedOrigins = env.ALLOWED_REDIRECT_ORIGINS.split(',')
+      .map((origin) => originFrom(origin.trim()))
+      .filter((origin): origin is string => origin !== null);
+    return url.protocol === 'https:' && approvedOrigins.includes(url.origin) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
-    const signatureBuffer = await crypto.subtle.sign(
-        'HMAC',
-        key,
-        encoder.encode(dataToSign)
-    );
+function frontendOrigins(env: Env): string[] {
+  return env.FRONTEND_ORIGINS.split(',')
+    .map((origin) => originFrom(origin.trim()))
+    .filter((origin): origin is string => origin !== null);
+}
 
-    const encodedSignature = base64UrlEncode(signatureBuffer);
+function corsHeaders(request: Request, env: Env): HeadersInit {
+  const headers = new Headers({
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  });
 
-    return `${dataToSign}.${encodedSignature}`;
+  const origin = request.headers.get('Origin');
+  if (origin && frontendOrigins(env).includes(origin)) {
+    headers.set('Access-Control-Allow-Origin', origin);
+  }
+
+  return headers;
+}
+
+function json(request: Request, env: Env, body: unknown, status = 200): Response {
+  return Response.json(body, { status, headers: { ...corsHeaders(request, env), ...JSON_HEADERS } });
+}
+
+async function parseJson(request: Request): Promise<Record<string, unknown> | null> {
+  if (!request.headers.get('Content-Type')?.includes('application/json')) return null;
+
+  try {
+    const body = await request.json();
+    return typeof body === 'object' && body !== null ? body as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+async function stateRequest(env: Env, operation: 'put' | 'consume', key: string, value?: AuthRecord): Promise<AuthRecord | null> {
+  const id = env.AUTH_STATE.idFromName('global-auth-state');
+  const response = await env.AUTH_STATE.get(id).fetch('https://auth-state.internal', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ operation, key, value }),
+  });
+
+  if (!response.ok) throw new Error('Authentication state is unavailable');
+  if (operation === 'put') return null;
+  return (await response.json<{ record: AuthRecord | null }>()).record;
+}
+
+async function verifyTurnstile(token: unknown, request: Request, env: Env): Promise<boolean> {
+  if (typeof token !== 'string' || token.length === 0 || token.length > 2048) return false;
+
+  const form = new FormData();
+  form.set('secret', env.TURNSTILE_SECRET_KEY);
+  form.set('response', token);
+  const ip = request.headers.get('CF-Connecting-IP');
+  if (ip) form.set('remoteip', ip);
+
+  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    body: form,
+  });
+  if (!response.ok) return false;
+
+  const result = await response.json<TurnstileResult>();
+  return result.success
+    && result.action === env.TURNSTILE_ACTION
+    && frontendOrigins(env).some((origin) => result.hostname === new URL(origin).hostname);
+}
+
+async function signJwt(payload: Record<string, unknown>, secret: string): Promise<string> {
+  const header = base64UrlEncode(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
+  const body = base64UrlEncode(encoder.encode(JSON.stringify(payload)));
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(`${header}.${body}`));
+  return `${header}.${body}.${base64UrlEncode(signature)}`;
+}
+
+async function mintHandoffToken(subject: string, redirectUrl: string, env: Env): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return signJwt({ sub: subject, aud: redirectUrl, iat: now, exp: now + 60, jti: crypto.randomUUID() }, env.JWT_SECRET);
+}
+
+async function codeChallenge(verifier: string): Promise<string> {
+  return base64UrlEncode(await crypto.subtle.digest('SHA-256', encoder.encode(verifier)));
+}
+
+async function startWalletChallenge(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+  const { address, chainId, redirect, turnstileToken } = body;
+  const redirectUrl = approvedRedirect(env, redirect);
+  const requiredChainId = Number(env.WALLET_CHAIN_ID);
+
+  if (!redirectUrl || typeof address !== 'string' || !ETHEREUM_ADDRESS.test(address) || chainId !== requiredChainId) {
+    return json(request, env, { error: 'Invalid authentication request' }, 400);
+  }
+  if (!await verifyTurnstile(turnstileToken, request, env)) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+  }
+
+  const nonce = crypto.randomUUID().replace(/-/g, '');
+  await stateRequest(env, 'put', `wallet:${nonce}`, {
+    address: address.toLowerCase(),
+    chainId: requiredChainId,
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    redirectUrl,
+  });
+
+  const passport = new URL(env.PASSPORT_ORIGIN);
+  const message = `${passport.host} wants you to sign in with your Ethereum account:\n${address.toLowerCase()}\n\nSign in to AXiM Passport.\n\nURI: ${passport.origin}\nVersion: 1\nChain ID: ${requiredChainId}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
+  log('wallet_challenge_created', { chainId: requiredChainId });
+  return json(request, env, { nonce, message });
+}
+
+async function verifyWallet(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+  const redirectUrl = approvedRedirect(env, body.redirect);
+  const credential = body.credential;
+  if (!redirectUrl || typeof credential !== 'object' || credential === null) {
+    return json(request, env, { error: 'Invalid authentication request' }, 400);
+  }
+
+  const { address, chainId, message, nonce, signature } = credential as Record<string, unknown>;
+  if (
+    typeof address !== 'string' || !ETHEREUM_ADDRESS.test(address)
+    || typeof signature !== 'string' || !HEX_SIGNATURE.test(signature)
+    || typeof message !== 'string' || typeof nonce !== 'string'
+    || chainId !== Number(env.WALLET_CHAIN_ID)
+  ) {
+    return json(request, env, { error: 'Invalid authentication request' }, 400);
+  }
+  if (!await verifyTurnstile(body.turnstileToken, request, env)) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+  }
+
+  const state = await stateRequest(env, 'consume', `wallet:${nonce}`);
+  if (!state || state.address !== address.toLowerCase() || state.chainId !== chainId || state.redirectUrl !== redirectUrl) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+  }
+
+  const valid = await verifyMessage({
+    address: address as `0x${string}`,
+    message,
+    signature: signature as `0x${string}`,
+  });
+  if (!valid) return json(request, env, { error: 'Authentication could not be verified' }, 403);
+
+  const token = await mintHandoffToken(address.toLowerCase(), redirectUrl, env);
+  log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
+  return json(request, env, { token });
+}
+
+async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
+  const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
+  if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
+    return new Response('Authentication could not be verified', { status: 403 });
+  }
+
+  const state = crypto.randomUUID();
+  const verifier = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+  await stateRequest(env, 'put', `google:${state}`, {
+    codeVerifier: verifier,
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    redirectUrl,
+  });
+
+  const callback = new URL('/api/v1/auth/google/callback', env.PASSPORT_ORIGIN);
+  callback.searchParams.set('state', state);
+  const authorize = new URL('/auth/v1/authorize', env.SUPABASE_URL);
+  authorize.searchParams.set('provider', 'google');
+  authorize.searchParams.set('redirect_to', callback.toString());
+  authorize.searchParams.set('code_challenge', await codeChallenge(verifier));
+  authorize.searchParams.set('code_challenge_method', 's256');
+  return Response.redirect(authorize.toString(), 302);
+}
+
+async function finishGoogle(env: Env, url: URL): Promise<Response> {
+  const code = url.searchParams.get('code');
+  const stateKey = url.searchParams.get('state');
+  if (!code || !stateKey) return new Response('Authentication could not be verified', { status: 403 });
+
+  const state = await stateRequest(env, 'consume', `google:${stateKey}`);
+  if (!state?.codeVerifier || !state.redirectUrl) return new Response('Authentication could not be verified', { status: 403 });
+
+  const response = await fetch(new URL('/auth/v1/token?grant_type=pkce', env.SUPABASE_URL), {
+    method: 'POST',
+    headers: { ...JSON_HEADERS, apikey: env.SUPABASE_ANON_KEY },
+    body: JSON.stringify({ auth_code: code, code_verifier: state.codeVerifier }),
+  });
+  if (!response.ok) return new Response('Authentication could not be verified', { status: 403 });
+
+  const result = await response.json<{ user?: { id?: string } }>();
+  if (!result.user?.id) return new Response('Authentication could not be verified', { status: 403 });
+
+  const handoff = new URL(state.redirectUrl);
+  handoff.searchParams.set('token', await mintHandoffToken(result.user.id, state.redirectUrl, env));
+  log('google_authenticated');
+  return Response.redirect(handoff.toString(), 302);
 }
 
 export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		if (request.method === 'OPTIONS') {
-			return new Response(null, { headers: corsHeaders });
-		}
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request, env) });
 
-		if (request.method === 'POST') {
-			const url = new URL(request.url);
+    if (request.method === 'POST') {
+      const origin = request.headers.get('Origin');
+      if (!origin || !frontendOrigins(env).includes(origin)) return new Response('Forbidden', { status: 403 });
 
-            let body: any = {};
-            try {
-                body = await request.clone().json();
-            } catch (e) {}
+      const body = await parseJson(request);
+      if (!body) return json(request, env, { error: 'Invalid request body' }, 400);
+      if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
+      if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, body);
+    }
 
-            const turnstileToken = request.headers.get('cf-turnstile-response') || body.turnstileToken || body.cf_turnstile_response;
-            const ip = request.headers.get('cf-connecting-ip') || '';
-
-            if (url.pathname === '/api/v1/auth/wallet/challenge' || url.pathname === '/api/v1/auth/verify') {
-                if (!turnstileToken) {
-                    logger.error('Turnstile token missing', { path: url.pathname, ip });
-                    return new Response(JSON.stringify({ error: 'Turnstile token missing' }), {
-                        status: 403,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                    });
-                }
-
-                const isTurnstileValid = await verifyTurnstile(turnstileToken, env.TURNSTILE_SECRET_KEY || 'dummy_secret', ip);
-
-                if (!isTurnstileValid) {
-                    logger.error('Turnstile validation failed', { path: url.pathname, ip });
-                    return new Response(JSON.stringify({ error: 'Turnstile validation failed' }), {
-                        status: 403,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                    });
-                }
-            }
-
-			if (url.pathname === '/api/v1/auth/wallet/challenge') {
-                logger.info('Authentication initiation event (challenge requested)', { path: url.pathname, ip });
-                const nonce = crypto.randomUUID().replace(/-/g, '');
-
-                const address = body.address || '0x0000000000000000000000000000000000000000';
-                const chainId = body.chainId || 1;
-                const domain = request.headers.get('host') || 'localhost';
-
-                const message = `${domain} wants you to sign in with your Ethereum account:\n${address}\n\nSign in to AXiM Passport.\n\nURI: https://${domain}\nVersion: 1\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
-
-                // Store nonce in KV
-                if (env.PASSPORT_SESSIONS) {
-                    try {
-                        await env.PASSPORT_SESSIONS.put(`nonce:${nonce}`, address.toLowerCase(), { expirationTtl: 300 }); // 5 minutes
-                    } catch (e: any) {
-                        logger.error('Failed to write nonce to KV store', { path: url.pathname, error: e.message });
-                    }
-                }
-
-                return new Response(JSON.stringify({ nonce, message }), {
-                    status: 200,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                });
-            }
-
-            if (url.pathname === '/api/v1/auth/verify') {
-                const credential = body.credential || {};
-                const { address, message, signature, nonce } = credential;
-
-                if (!address || !message || !signature || !nonce) {
-                    logger.error('Missing verification fields', { path: url.pathname, ip });
-                    return new Response(JSON.stringify({ error: 'Missing verification fields' }), {
-                        status: 400,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
-                }
-
-                // Verify nonce
-                let storedAddress = null;
-                if (env.PASSPORT_SESSIONS) {
-                    try {
-                        storedAddress = await env.PASSPORT_SESSIONS.get(`nonce:${nonce}`);
-                    } catch (e: any) {
-                        logger.error('Failed to read nonce from KV store', { path: url.pathname, error: e.message });
-                    }
-                }
-
-                if (!storedAddress || storedAddress.toLowerCase() !== address.toLowerCase()) {
-                    logger.error('Invalid or expired nonce', { path: url.pathname, address, ip });
-                    return new Response(JSON.stringify({ error: 'Invalid or expired nonce' }), {
-                        status: 403,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
-                }
-
-                // Cryptographic Verification
-                try {
-                    const isValid = await verifyMessage({
-                        address: address as `0x${string}`,
-                        message,
-                        signature: signature as `0x${string}`,
-                    });
-
-                    if (!isValid) {
-                        logger.error('Invalid signature', { path: url.pathname, address, ip });
-                        return new Response(JSON.stringify({ error: 'Invalid signature' }), {
-                            status: 403,
-                            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                        });
-                    }
-                } catch (error: any) {
-                    logger.error('Signature verification failed', { path: url.pathname, address, ip, error_type: error.name || 'VerificationError' });
-                    return new Response(JSON.stringify({ error: 'Signature verification failed' }), {
-                        status: 400,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
-                }
-
-                // Remove used nonce
-                if (env.PASSPORT_SESSIONS) {
-                    try {
-                        await env.PASSPORT_SESSIONS.delete(`nonce:${nonce}`);
-                    } catch (e: any) {
-                        logger.error('Failed to delete nonce from KV store', { path: url.pathname, error: e.message });
-                    }
-                }
-
-                const redirectUrl = url.searchParams.get('redirect') || body.redirect || 'default_origin';
-
-                const jti = crypto.randomUUID();
-                const now = Math.floor(Date.now() / 1000);
-                const exp = now + 60; // 60 seconds expiration
-
-                const payload = {
-                    sub: address.toLowerCase(),
-                    aud: redirectUrl,
-                    iat: now,
-                    exp: exp,
-                    jti: jti
-                };
-
-                const jwtSecret = env.JWT_SECRET || 'default_fallback_secret_for_local_dev';
-                const token = await signJWT(payload, jwtSecret);
-
-                // Write to KV store for replay protection with 60s TTL
-                if (env.PASSPORT_SESSIONS) {
-                    try {
-                        await env.PASSPORT_SESSIONS.put(`jti:${jti}`, 'active', { expirationTtl: 60 });
-                    } catch (e: any) {
-                        logger.error('Failed to write to KV store', { path: url.pathname, error: e.message });
-                    }
-                } else {
-                    logger.error('KV namespace PASSPORT_SESSIONS is not bound', { path: url.pathname });
-                }
-
-                logger.info('Authentication success', { path: url.pathname, address, ip, jti });
-                return new Response(JSON.stringify({ token }), {
-                    status: 200,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                });
-            }
-		}
-
-		return new Response('Not found', { status: 404, headers: corsHeaders });
-	}
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(env, url);
+    return new Response('Not found', { status: 404 });
+  },
 };
