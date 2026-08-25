@@ -8,23 +8,31 @@ import { getWalletAccount, signWalletChallenge } from '../services/walletAuth';
 
 function usePassportAuth(redirectUrl) {
   const [selectedMethod, setSelectedMethod] = useState('');
+  const [verificationStage, setVerificationStage] = useState('initial');
+  const [pendingWallet, setPendingWallet] = useState(null);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [resetKey, setResetKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  const resetVerification = useCallback(() => {
+    setTurnstileToken('');
+    setResetKey((value) => value + 1);
+  }, []);
 
   const selectMethod = useCallback((method) => {
     setError('');
 
     if (selectedMethod !== method) {
       setSelectedMethod(method);
-      setTurnstileToken('');
-      setResetKey((value) => value + 1);
+      setVerificationStage('initial');
+      setPendingWallet(null);
+      resetVerification();
       return false;
     }
 
     return true;
-  }, [selectedMethod]);
+  }, [resetVerification, selectedMethod]);
 
   const ensureReady = useCallback(() => {
     if (!redirectUrl) {
@@ -47,9 +55,10 @@ function usePassportAuth(redirectUrl) {
   const fail = useCallback((message) => {
     setBusy(false);
     setError(message);
-    setTurnstileToken('');
-    setResetKey((value) => value + 1);
-  }, []);
+    setPendingWallet(null);
+    setVerificationStage('initial');
+    resetVerification();
+  }, [resetVerification]);
 
   const startGoogle = useCallback(() => {
     if (!selectMethod('google')) {
@@ -74,26 +83,38 @@ function usePassportAuth(redirectUrl) {
       ensureReady();
       setBusy(true);
 
-      const wallet = await getWalletAccount();
-      const challenge = await requestWalletChallenge({
-        address: wallet.address,
-        chainId: wallet.chainId,
-        turnstileToken,
-        redirectUrl,
-      });
+      if (!pendingWallet) {
+        const wallet = await getWalletAccount();
+        const challenge = await requestWalletChallenge({
+          address: wallet.address,
+          chainId: wallet.chainId,
+          turnstileToken,
+          redirectUrl,
+        });
 
-      const signedChallenge = await signWalletChallenge({
-        provider: wallet.provider,
-        address: wallet.address,
-        message: challenge.message,
-      });
+        const signedChallenge = await signWalletChallenge({
+          provider: wallet.provider,
+          address: wallet.address,
+          message: challenge.message,
+        });
+
+        setPendingWallet({
+          wallet,
+          challenge,
+          signedChallenge,
+        });
+        setVerificationStage('wallet-verify');
+        setBusy(false);
+        resetVerification();
+        return;
+      }
 
       const handoffUrl = await authenticate({
         method: 'wallet',
         credential: {
-          ...signedChallenge,
-          nonce: challenge.nonce,
-          chainId: wallet.chainId,
+          ...pendingWallet.signedChallenge,
+          nonce: pendingWallet.challenge.nonce,
+          chainId: pendingWallet.wallet.chainId,
         },
         turnstileToken,
         redirectUrl,
@@ -103,10 +124,20 @@ function usePassportAuth(redirectUrl) {
     } catch (authenticationError) {
       fail(authenticationError.message || 'Wallet authentication failed.');
     }
-  }, [ensureReady, fail, redirectUrl, selectMethod, turnstileToken]);
+  }, [
+    ensureReady,
+    fail,
+    pendingWallet,
+    redirectUrl,
+    resetVerification,
+    selectMethod,
+    turnstileToken,
+  ]);
 
   const cancel = useCallback(() => {
     setSelectedMethod('');
+    setVerificationStage('initial');
+    setPendingWallet(null);
     setTurnstileToken('');
     setError('');
     setBusy(false);
@@ -120,6 +151,7 @@ function usePassportAuth(redirectUrl) {
 
   return {
     selectedMethod,
+    verificationStage,
     turnstileToken,
     resetKey,
     busy,

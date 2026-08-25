@@ -37,6 +37,7 @@ function App() {
         redirectError={redirectState.error}
         readiness={readiness}
         selectedMethod={auth.selectedMethod}
+        verificationStage={auth.verificationStage}
         busy={auth.busy}
         error={auth.error}
         resetKey={auth.resetKey}

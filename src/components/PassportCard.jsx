@@ -19,6 +19,7 @@ function PassportCard({
   redirectError,
   readiness,
   selectedMethod,
+  verificationStage,
   busy,
   error,
   resetKey,
@@ -30,6 +31,15 @@ function PassportCard({
 }) {
   const destination = redirectUrl ? new URL(redirectUrl).hostname : '';
   const methodSelected = Boolean(selectedMethod);
+  const walletFinalVerification = verificationStage === 'wallet-verify';
+
+  const verificationCopy = walletFinalVerification
+    ? 'Complete the final verification to securely verify your wallet signature.'
+    : 'Complete the managed verification before continuing.';
+
+  const walletLabel = walletFinalVerification
+    ? 'Verify wallet signature'
+    : 'Connect wallet';
 
   return (
     <main className="passport-card">
@@ -76,23 +86,34 @@ function PassportCard({
           <span>OR CONNECT</span>
         </div>
 
-        <AuthButton icon={FiHexagon} onClick={onWallet} disabled={busy || !redirectUrl} secondary>
+        <AuthButton
+          icon={FiHexagon}
+          onClick={onWallet}
+          disabled={busy || !redirectUrl}
+          secondary
+        >
           {selectedMethod === 'wallet' && busy
-            ? 'Connecting wallet…'
-            : 'Connect wallet'}
+            ? 'Verifying wallet…'
+            : walletLabel}
         </AuthButton>
       </section>
 
       {methodSelected && !busy && (
         <div className="verification-panel">
           <div className="verification-heading">
-            <span>SECURITY CHECK</span>
-            <button type="button" onClick={onCancel} aria-label="Cancel authentication">
+            <span>
+              {walletFinalVerification ? 'FINAL SECURITY CHECK' : 'SECURITY CHECK'}
+            </span>
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label="Cancel authentication"
+            >
               <SafeIcon icon={FiX} />
             </button>
           </div>
 
-          <p>Complete the managed verification before continuing.</p>
+          <p>{verificationCopy}</p>
 
           <TurnstileBox
             resetKey={resetKey}
