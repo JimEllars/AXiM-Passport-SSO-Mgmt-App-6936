@@ -9,5 +9,8 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240821.1",
     "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "viem": "^2.55.19"
   }
 }

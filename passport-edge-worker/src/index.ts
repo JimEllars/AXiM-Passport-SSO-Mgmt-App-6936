@@ -1,3 +1,4 @@
+import { verifyMessage } from 'viem';
 
 export interface Env {
 	TURNSTILE_SECRET_KEY: string;
@@ -133,73 +134,123 @@ export default {
 			if (url.pathname === '/api/v1/auth/wallet/challenge') {
                 logger.info('Authentication initiation event (challenge requested)', { path: url.pathname, ip });
                 const nonce = crypto.randomUUID().replace(/-/g, '');
-                const message = `localhost wants you to sign in with your Ethereum account:\n0x0000000000000000000000000000000000000000\n\nSign in to AXiM Passport.\n\nURI: http://localhost\nVersion: 1\nChain ID: 1\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
+
+                const address = body.address || '0x0000000000000000000000000000000000000000';
+                const chainId = body.chainId || 1;
+                const domain = request.headers.get('host') || 'localhost';
+
+                const message = `${domain} wants you to sign in with your Ethereum account:\n${address}\n\nSign in to AXiM Passport.\n\nURI: https://${domain}\nVersion: 1\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
+
+                // Store nonce in KV
+                if (env.PASSPORT_SESSIONS) {
+                    try {
+                        await env.PASSPORT_SESSIONS.put(`nonce:${nonce}`, address.toLowerCase(), { expirationTtl: 300 }); // 5 minutes
+                    } catch (e: any) {
+                        logger.error('Failed to write nonce to KV store', { path: url.pathname, error: e.message });
+                    }
+                }
 
                 return new Response(JSON.stringify({ nonce, message }), {
                     status: 200,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
-			}
+            }
 
             if (url.pathname === '/api/v1/auth/verify') {
-                const whitelist = [
-                    '0x1234567890123456789012345678901234567890',
-                    '0x0000000000000000000000000000000000000000'
-                ];
+                const credential = body.credential || {};
+                const { address, message, signature, nonce } = credential;
 
-                const address = body.address || '0x0000000000000000000000000000000000000000';
+                if (!address || !message || !signature || !nonce) {
+                    logger.error('Missing verification fields', { path: url.pathname, ip });
+                    return new Response(JSON.stringify({ error: 'Missing verification fields' }), {
+                        status: 400,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
 
-                const isWhitelisted = whitelist.includes(address.toLowerCase());
+                // Verify nonce
+                let storedAddress = null;
+                if (env.PASSPORT_SESSIONS) {
+                    try {
+                        storedAddress = await env.PASSPORT_SESSIONS.get(`nonce:${nonce}`);
+                    } catch (e: any) {
+                        logger.error('Failed to read nonce from KV store', { path: url.pathname, error: e.message });
+                    }
+                }
 
-                if (!isWhitelisted) {
-                    logger.error('Address not whitelisted', { path: url.pathname, address, ip });
-                    return new Response(JSON.stringify({ error: 'Address not whitelisted' }), {
+                if (!storedAddress || storedAddress.toLowerCase() !== address.toLowerCase()) {
+                    logger.error('Invalid or expired nonce', { path: url.pathname, address, ip });
+                    return new Response(JSON.stringify({ error: 'Invalid or expired nonce' }), {
                         status: 403,
                         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
 
-                if (body.signature) {
-                    const redirectUrl = url.searchParams.get('redirect') || body.redirect || 'default_origin';
-
-                    const jti = crypto.randomUUID();
-                    const now = Math.floor(Date.now() / 1000);
-                    const exp = now + 60; // 60 seconds expiration
-
-                    const payload = {
-                        sub: address.toLowerCase(),
-                        aud: redirectUrl,
-                        iat: now,
-                        exp: exp,
-                        jti: jti
-                    };
-
-                    const jwtSecret = env.JWT_SECRET || 'default_fallback_secret_for_local_dev';
-                    const token = await signJWT(payload, jwtSecret);
-
-                    // Write to KV store for replay protection with 60s TTL
-                    if (env.PASSPORT_SESSIONS) {
-                        try {
-                            await env.PASSPORT_SESSIONS.put(`jti:${jti}`, 'active', { expirationTtl: 60 });
-                        } catch (e: any) {
-                            logger.error('Failed to write to KV store', { path: url.pathname, error: e.message });
-                        }
-                    } else {
-                        logger.error('KV namespace PASSPORT_SESSIONS is not bound', { path: url.pathname });
-                    }
-
-                    logger.info('Authentication success', { path: url.pathname, address, ip, jti });
-                    return new Response(JSON.stringify({ token }), {
-                        status: 200,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                // Cryptographic Verification
+                try {
+                    const isValid = await verifyMessage({
+                        address: address as `0x${string}`,
+                        message,
+                        signature: signature as `0x${string}`,
                     });
-                } else {
-                    logger.error('Missing signature', { path: url.pathname, address, ip });
-                    return new Response(JSON.stringify({ error: 'Missing signature' }), {
+
+                    if (!isValid) {
+                        logger.error('Invalid signature', { path: url.pathname, address, ip });
+                        return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+                            status: 403,
+                            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        });
+                    }
+                } catch (error: any) {
+                    logger.error('Signature verification failed', { path: url.pathname, address, ip, error: error.message });
+                    return new Response(JSON.stringify({ error: 'Signature verification failed' }), {
                         status: 400,
                         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
+
+                // Remove used nonce
+                if (env.PASSPORT_SESSIONS) {
+                    try {
+                        await env.PASSPORT_SESSIONS.delete(`nonce:${nonce}`);
+                    } catch (e: any) {
+                        logger.error('Failed to delete nonce from KV store', { path: url.pathname, error: e.message });
+                    }
+                }
+
+                const redirectUrl = url.searchParams.get('redirect') || body.redirect || 'default_origin';
+
+                const jti = crypto.randomUUID();
+                const now = Math.floor(Date.now() / 1000);
+                const exp = now + 60; // 60 seconds expiration
+
+                const payload = {
+                    sub: address.toLowerCase(),
+                    aud: redirectUrl,
+                    iat: now,
+                    exp: exp,
+                    jti: jti
+                };
+
+                const jwtSecret = env.JWT_SECRET || 'default_fallback_secret_for_local_dev';
+                const token = await signJWT(payload, jwtSecret);
+
+                // Write to KV store for replay protection with 60s TTL
+                if (env.PASSPORT_SESSIONS) {
+                    try {
+                        await env.PASSPORT_SESSIONS.put(`jti:${jti}`, 'active', { expirationTtl: 60 });
+                    } catch (e: any) {
+                        logger.error('Failed to write to KV store', { path: url.pathname, error: e.message });
+                    }
+                } else {
+                    logger.error('KV namespace PASSPORT_SESSIONS is not bound', { path: url.pathname });
+                }
+
+                logger.info('Authentication success', { path: url.pathname, address, ip, jti });
+                return new Response(JSON.stringify({ token }), {
+                    status: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
             }
 		}
 
