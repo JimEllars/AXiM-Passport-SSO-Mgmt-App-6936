@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "axim-passport-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "PASSPORT_ORIGIN": "https://passport.axim.us.com",
+    "FRONTEND_ORIGINS": "https://passport.axim.us.com,https://axim-passport.pages.dev",
+    "ALLOWED_REDIRECT_ORIGINS": "https://nexus.axim.us.com,https://echo.axim.us.com,https://onyx.axim.us.com",
+    "SUPABASE_URL": "https://pvbcdndqjguzqeafhwhw.supabase.co",
+    "WALLET_CHAIN_ID": "1",
+    "TURNSTILE_ACTION": "passport_auth"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AUTH_STATE",
+        "class_name": "AuthState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AuthState"]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
