@@ -1,0 +1,13 @@
+{
+  "name": "passport-edge-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker for AXiM Passport",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240821.1",
+    "typescript": "^5.5.4"
+  }
+}
