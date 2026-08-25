@@ -5,3 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 # Variables
+
+[[kv_namespaces]]
+binding = "PASSPORT_SESSIONS"
+id = "preview_id_placeholder"
