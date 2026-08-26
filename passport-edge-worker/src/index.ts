@@ -1,6 +1,11 @@
+import { EmailDispatchManager } from './emailService';
+
 import { verifyMessage } from 'viem';
 
 interface Env {
+  EMAILIT_API_KEY: string;
+  RESEND_API_KEY: string;
+  ADMIN_ALERT_EMAIL: string;
   ALLOWED_REDIRECT_ORIGINS: string;
   AUTH_STATE: DurableObjectNamespace;
   FRONTEND_ORIGINS: string;
@@ -56,6 +61,22 @@ export class AuthState implements DurableObject {
 
     return new Response('Invalid state operation', { status: 400 });
   }
+}
+
+
+async function sendUnauthorizedAlert(env: Env, ctx: ExecutionContext, identifier: string, method: string) {
+  if (!env.EMAILIT_API_KEY || !env.RESEND_API_KEY || !env.ADMIN_ALERT_EMAIL) return;
+  const emailService = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+
+  ctx.waitUntil(
+    emailService.send({
+      from: 'System Alerts <alerts@axim.us.com>',
+      to: env.ADMIN_ALERT_EMAIL,
+      subject: 'Unauthorized Access Attempt Blocked',
+      text: `An unauthorized access attempt was blocked.\n\nMethod: ${method}\nIdentifier: ${identifier}`,
+      html: `<p>An unauthorized access attempt was blocked.</p><p><strong>Method:</strong> ${method}<br/><strong>Identifier:</strong> ${identifier}</p>`,
+    }).catch(console.error)
+  );
 }
 
 function log(event: string, metadata: Record<string, string | number | boolean> = {}) {
@@ -206,7 +227,7 @@ async function startWalletChallenge(request: Request, env: Env, body: Record<str
   return json(request, env, { nonce, message });
 }
 
-async function verifyWallet(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
   const redirectUrl = approvedRedirect(env, body.redirect);
   const credential = body.credential;
   if (!redirectUrl || typeof credential !== 'object' || credential === null) {
@@ -236,7 +257,10 @@ async function verifyWallet(request: Request, env: Env, body: Record<string, unk
     message,
     signature: signature as `0x${string}`,
   });
-  if (!valid) return json(request, env, { error: 'Authentication could not be verified' }, 403);
+  if (!valid) {
+    await sendUnauthorizedAlert(env, ctx, address as string, 'Wallet');
+    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+  }
 
   const token = await mintHandoffToken(address.toLowerCase(), redirectUrl, env);
   log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
@@ -267,7 +291,7 @@ async function startGoogle(request: Request, env: Env, url: URL): Promise<Respon
   return Response.redirect(authorize.toString(), 302);
 }
 
-async function finishGoogle(env: Env, url: URL): Promise<Response> {
+async function finishGoogle(env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   const code = url.searchParams.get('code');
   const stateKey = url.searchParams.get('state');
   if (!code || !stateKey) return new Response('Authentication could not be verified', { status: 403 });
@@ -280,10 +304,19 @@ async function finishGoogle(env: Env, url: URL): Promise<Response> {
     headers: { ...JSON_HEADERS, apikey: env.SUPABASE_ANON_KEY },
     body: JSON.stringify({ auth_code: code, code_verifier: state.codeVerifier }),
   });
-  if (!response.ok) return new Response('Authentication could not be verified', { status: 403 });
+  if (!response.ok) {
+    await sendUnauthorizedAlert(env, ctx, 'Unknown Google User', 'Google SSO');
+    return new Response('Authentication could not be verified', { status: 403 });
+  }
 
   const result = await response.json<{ user?: { id?: string } }>();
-  if (!result.user?.id) return new Response('Authentication could not be verified', { status: 403 });
+  if (!result.user?.id) {
+    // If we had the email here we would use it, but we might only have state/code.
+    // We'll use 'Unknown Email (Google)' or if there's an email in result.user we could use that.
+    const identifier = (result.user as any)?.email || result.user?.id || 'Unknown Google User';
+    await sendUnauthorizedAlert(env, ctx, identifier, 'Google SSO');
+    return new Response('Authentication could not be verified', { status: 403 });
+  }
 
   const handoff = new URL(state.redirectUrl);
   handoff.searchParams.set('token', await mintHandoffToken(result.user.id, state.redirectUrl, env));
@@ -308,7 +341,7 @@ async function handleTelemetry(request: Request, env: Env, body: Record<string, 
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request, env) });
 
@@ -319,12 +352,12 @@ export default {
       const body = await parseJson(request);
       if (!body) return json(request, env, { error: 'Invalid request body' }, 400);
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
-      if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, body);
+      if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
       if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, body);
     }
 
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(env, url);
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(env, ctx, url);
     return new Response('Not found', { status: 404 });
   },
 };
