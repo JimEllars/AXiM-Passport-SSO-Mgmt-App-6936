@@ -39,6 +39,45 @@ const JSON_HEADERS = { 'Content-Type': 'application/json; charset=UTF-8' };
 const ETHEREUM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 const HEX_SIGNATURE = /^0x[a-fA-F0-9]{130}$/;
 
+const RATE_LIMIT_WINDOW_MS = 10000; // 10 seconds
+const RATE_LIMIT_MAX_REQUESTS = 10;
+
+const SECURITY_HEADERS = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin'
+};
+
+const ipRequestCounts = new Map<string, { count: number; expiresAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const record = ipRequestCounts.get(ip);
+  if (!record || record.expiresAt < now) {
+    ipRequestCounts.set(ip, { count: 1, expiresAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+
+  record.count += 1;
+  return true;
+}
+
+// Simple cleanup function (could be called occasionally or in an alarm, but for edge workers with short lifespan, Map is fine)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of ipRequestCounts.entries()) {
+    if (value.expiresAt < now) {
+      ipRequestCounts.delete(key);
+    }
+  }
+}, 60000);
+
+
 export class AuthState implements DurableObject {
   constructor(private readonly state: DurableObjectState) {}
 
@@ -61,7 +100,34 @@ export class AuthState implements DurableObject {
       return Response.json({ record });
     }
 
+    if (operation === 'consumeToken') {
+      const exists = await this.state.storage.get(key);
+      if (exists) {
+        return Response.json({ success: false });
+      }
+
+      await this.state.storage.put(key, Date.now() + 60000);
+
+      // Cleanup tokens using alarms
+      const currentAlarm = await this.state.storage.getAlarm();
+      if (!currentAlarm) {
+        await this.state.storage.setAlarm(Date.now() + 60000);
+      }
+
+      return Response.json({ success: true });
+    }
+
     return new Response('Invalid state operation', { status: 400 });
+  }
+
+  async alarm() {
+    const map = await this.state.storage.list();
+    const now = Date.now();
+    for (const [key, val] of map.entries()) {
+      if (typeof val === 'number' && val < now) {
+        await this.state.storage.delete(key);
+      }
+    }
   }
 }
 
@@ -90,6 +156,34 @@ function base64UrlEncode(value: ArrayBuffer | Uint8Array): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function base64UrlDecode(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = base64.length % 4;
+  const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function verifyJwt(token: string, secret: string): Promise<Record<string, unknown> | null> {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [headerB64, bodyB64, sigB64] = parts;
+    const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const isValid = await crypto.subtle.verify('HMAC', key, (base64UrlDecode(sigB64) as unknown as BufferSource), encoder.encode(`${headerB64}.${bodyB64}`));
+    if (!isValid) return null;
+
+    const bodyStr = new TextDecoder().decode(base64UrlDecode(bodyB64));
+    return JSON.parse(bodyStr);
+  } catch (e) {
+    return null;
+  }
 }
 
 function originFrom(value: string): string | null {
@@ -152,7 +246,7 @@ async function parseJson(request: Request): Promise<Record<string, unknown> | nu
   }
 }
 
-async function stateRequest(env: Env, operation: 'put' | 'consume', key: string, value?: AuthRecord): Promise<AuthRecord | null> {
+async function stateRequest(env: Env, operation: 'put' | 'consume' | 'consumeToken', key: string, value?: AuthRecord): Promise<any> {
   const id = env.AUTH_STATE.idFromName('global-auth-state');
   const response = await env.AUTH_STATE.get(id).fetch('https://auth-state.internal', {
     method: 'POST',
@@ -162,6 +256,7 @@ async function stateRequest(env: Env, operation: 'put' | 'consume', key: string,
 
   if (!response.ok) throw new Error('Authentication state is unavailable');
   if (operation === 'put') return null;
+  if (operation === 'consumeToken') return (await response.json<{ success: boolean }>()).success;
   return (await response.json<{ record: AuthRecord | null }>()).record;
 }
 
@@ -267,6 +362,49 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
   const token = await mintHandoffToken(address.toLowerCase(), redirectUrl, env);
   log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
   return json(request, env, { token });
+}
+
+async function consumeTokenEndpoint(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+  const { token, origin } = body;
+
+  if (typeof token !== 'string' || typeof origin !== 'string') {
+    return json(request, env, { error: 'Invalid request' }, 400);
+  }
+
+  const payload = await verifyJwt(token, env.JWT_SECRET);
+  if (!payload) {
+    return json(request, env, { error: 'Invalid token' }, 403);
+  }
+
+  // Check expiry
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || payload.exp < now) {
+    return json(request, env, { error: 'Token expired' }, 403);
+  }
+
+  // Check aud matches origin
+  const audUrl = new URL(payload.aud as string);
+  if (audUrl.origin !== origin) {
+    return json(request, env, { error: 'Invalid audience' }, 403);
+  }
+
+  // Check origin is allowed
+  const approved = approvedRedirect(env, origin);
+  if (!approved) {
+    return json(request, env, { error: 'Invalid origin' }, 403);
+  }
+
+  // Consume in DO
+  if (typeof payload.jti !== 'string') {
+    return json(request, env, { error: 'Invalid token' }, 403);
+  }
+
+  const success = await stateRequest(env, 'consumeToken', `jti:${payload.jti}`);
+  if (!success) {
+    return json(request, env, { error: 'Token already consumed' }, 403);
+  }
+
+  return json(request, env, { valid: true, sub: payload.sub, aud: payload.aud });
 }
 
 async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
@@ -416,6 +554,19 @@ async function handleTelemetry(request: Request, env: Env, body: Record<string, 
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const response = await this.handleFetch(request, env, ctx);
+    const newHeaders = new Headers(response.headers);
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+      newHeaders.set(key, value);
+    }
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders
+    });
+  },
+
+  async handleFetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request, env) });
@@ -429,6 +580,22 @@ export default {
     }
 
 
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const rateLimitedPaths = ['/api/v1/auth/verify', '/api/v1/auth/wallet/challenge', '/api/v1/auth/token/consume'];
+    if (rateLimitedPaths.includes(url.pathname)) {
+      if (!checkRateLimit(ip)) {
+        log('rate_limit_exceeded', { ip, path: url.pathname });
+        return new Response(JSON.stringify({ error: 'Too Many Requests' }), {
+          status: 429,
+          headers: {
+            ...corsHeaders(request, env),
+            ...JSON_HEADERS,
+            'Retry-After': '10'
+          }
+        });
+      }
+    }
+
     if (request.method === 'POST') {
       const origin = request.headers.get('Origin');
       if (!origin || !frontendOrigins(env).includes(origin)) return new Response('Forbidden', { status: 403 });
@@ -437,6 +604,7 @@ export default {
       if (!body) return json(request, env, { error: 'Invalid request body' }, 400);
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
+      if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, body);
       if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, body);
     }
 
