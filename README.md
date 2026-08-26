@@ -7,7 +7,7 @@ AXiM Passport is the browser-facing SSO handoff application for approved AXiM ap
 | Component | Production resource |
 | --- | --- |
 | Frontend | Cloudflare Pages project `axim-passport` |
-| API | Worker `axim-passport-api` |
+| API | Worker `axim-passport-api` (`https://axim-passport-api.axim.us.com`) |
 | Authentication state | `AuthState` Durable Object |
 | Bot protection | Managed Turnstile widget `axim-passport` |
 | Public hostname | `https://passport.axim.us.com` |

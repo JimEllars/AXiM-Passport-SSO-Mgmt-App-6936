@@ -291,6 +291,22 @@ async function finishGoogle(env: Env, url: URL): Promise<Response> {
   return Response.redirect(handoff.toString(), 302);
 }
 
+
+async function handleTelemetry(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+  const { event, timestamp, ...payload } = body;
+
+  // Sanitize payload just in case frontend missed something
+  delete payload.token;
+  delete payload.turnstileToken;
+  delete payload.credential;
+
+  if (typeof event === 'string') {
+    log(event, payload as Record<string, string | number | boolean>);
+  }
+
+  return json(request, env, { success: true });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -304,6 +320,7 @@ export default {
       if (!body) return json(request, env, { error: 'Invalid request body' }, 400);
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, body);
+      if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, body);
     }
 
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
