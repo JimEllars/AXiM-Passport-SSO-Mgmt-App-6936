@@ -16,6 +16,7 @@ interface Env {
   TURNSTILE_ACTION: string;
   TURNSTILE_SECRET_KEY: string;
   WALLET_CHAIN_ID: string;
+  SECURITY_AUDIT_LOGS: KVNamespace;
 }
 
 interface AuthRecord {
@@ -335,6 +336,12 @@ async function handleTelemetry(request: Request, env: Env, body: Record<string, 
 
   if (typeof event === 'string') {
     log(event, payload as Record<string, string | number | boolean>);
+
+    if (event === 'unauthorized_access') {
+      const identifier = payload.address || payload.method || 'unknown';
+      const key = `alert:${timestamp || new Date().toISOString()}:${identifier}`;
+      await env.SECURITY_AUDIT_LOGS.put(key, JSON.stringify({ event, timestamp, payload }), { expirationTtl: 30 * 24 * 60 * 60 });
+    }
   }
 
   return json(request, env, { success: true });

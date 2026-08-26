@@ -3,6 +3,7 @@ import {
   authenticate,
   getGoogleAuthUrl,
   requestWalletChallenge,
+  publishTelemetry,
 } from '../services/passportApi';
 import { getWalletAccount, signWalletChallenge } from '../services/walletAuth';
 
@@ -71,7 +72,10 @@ function usePassportAuth(redirectUrl) {
       setBusy(true);
       window.location.assign(getGoogleAuthUrl(redirectUrl, turnstileToken));
     } catch (authenticationError) {
-      if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
+      if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
+        publishTelemetry('unauthorized_access', { method: 'google' });
+        fail('SECURITY_LOCKOUT');
+      } else if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
         fail('Authentication was cancelled. Please try again.');
       } else {
         fail(authenticationError.message || 'Google authentication failed.');
@@ -128,7 +132,11 @@ function usePassportAuth(redirectUrl) {
 
       window.location.assign(handoffUrl);
     } catch (authenticationError) {
-      if (authenticationError.code === 4001 || (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel'))) {
+      if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
+        const address = pendingWallet?.wallet?.address;
+        publishTelemetry('unauthorized_access', { method: 'wallet', address });
+        fail('SECURITY_LOCKOUT');
+      } else if (authenticationError.code === 4001 || (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel'))) {
         fail('Wallet signature was cancelled. Please try again.');
       } else {
         fail(authenticationError.message || 'Wallet authentication failed.');

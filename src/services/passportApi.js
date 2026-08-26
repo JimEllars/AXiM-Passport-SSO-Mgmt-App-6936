@@ -91,7 +91,7 @@ async function post(path, payload) {
 
     if (!response.ok) {
       if (response.status === 403) {
-        throw new Error('Authentication could not be verified.');
+        throw new Error('403 Forbidden: Authentication could not be verified.');
       }
 
       if (response.status === 429) {

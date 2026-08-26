@@ -152,12 +152,17 @@ function PassportCard({
       )}
       </AnimatePresence>
 
-      {error && (
+      {error === 'SECURITY_LOCKOUT' ? (
+        <div className="error-message" role="alert" style={{ borderColor: 'red', color: 'red' }}>
+          <SafeIcon icon={FiAlertCircle} />
+          <span>Unauthorized Ecosystem Access - Incident Logged</span>
+        </div>
+      ) : error ? (
         <div className="error-message" role="alert">
           <SafeIcon icon={FiAlertCircle} />
           <span>{error}</span>
         </div>
-      )}
+      ) : null}
 
       <div className="card-footer">
         <SafeIcon icon={FiLock} />
