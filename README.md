@@ -62,3 +62,16 @@ Set-Location passport-edge-worker
 npm run build
 npx wrangler deploy
 ```
+
+## Continuous Deployment
+
+This repository uses GitHub Actions for continuous integration and continuous deployment (CI/CD) to Cloudflare.
+The pipelines deploy updates seamlessly with zero downtime, without disrupting active users.
+
+The following GitHub Repository Secrets are required to authenticate with Cloudflare for deployment:
+- `CLOUDFLARE_API_TOKEN`: A Cloudflare API token with permissions to edit Pages and Workers.
+- `CLOUDFLARE_ACCOUNT_ID`: The Cloudflare account ID where the resources are deployed.
+
+There are two primary deployment workflows:
+1. **Edge Worker Deployment**: Triggers when files inside the `passport-edge-worker/` directory change on the `main` branch.
+2. **Frontend Pages Deployment**: Triggers when frontend files (e.g., `src/`, `package.json`, `index.html`) change on the `main` branch.
