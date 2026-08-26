@@ -20,6 +20,7 @@ function TurnstileBox({ onToken, onError, resetKey }) {
     let cancelled = false;
     let attempts = 0;
     let timeoutId;
+    let refreshIntervalId; // Add interval reference
 
     const fail = (message) => {
       if (!cancelled) {
@@ -53,11 +54,23 @@ function TurnstileBox({ onToken, onError, resetKey }) {
           callback: (token) => {
             setStatus('verified');
             callbacksRef.current.onToken(token);
+
+            // Auto-refresh token just before 5m expiration (4m 30s = 270000ms)
+            if (refreshIntervalId) clearInterval(refreshIntervalId);
+            refreshIntervalId = setInterval(() => {
+              if (window.turnstile && widgetRef.current !== null) {
+                window.turnstile.reset(widgetRef.current);
+              }
+            }, 270000);
           },
           'error-callback': () => fail('Security verification failed. Try again.'),
           'expired-callback': () => {
             setStatus('expired');
             callbacksRef.current.onToken('');
+            // Attempt auto reset if expired manually
+             if (window.turnstile && widgetRef.current !== null) {
+                 window.turnstile.reset(widgetRef.current);
+             }
           },
         });
         setStatus('ready');
@@ -71,6 +84,7 @@ function TurnstileBox({ onToken, onError, resetKey }) {
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+      if (refreshIntervalId) clearInterval(refreshIntervalId);
 
       if (widgetRef.current !== null && window.turnstile) {
         window.turnstile.remove(widgetRef.current);
