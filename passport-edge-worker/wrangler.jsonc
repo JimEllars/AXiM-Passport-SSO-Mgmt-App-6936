@@ -12,6 +12,7 @@
     "WALLET_CHAIN_ID": "1",
     "TURNSTILE_ACTION": "passport_auth",
     "EMAILIT_API_KEY": "",
+    "EMAILIT_WEBHOOK_SECRET": "",
     "RESEND_API_KEY": "",
     "ADMIN_ALERT_EMAIL": ""
   },

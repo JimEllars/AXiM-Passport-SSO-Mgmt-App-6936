@@ -4,6 +4,7 @@ import { verifyMessage } from 'viem';
 
 interface Env {
   EMAILIT_API_KEY: string;
+  EMAILIT_WEBHOOK_SECRET: string;
   RESEND_API_KEY: string;
   ADMIN_ALERT_EMAIL: string;
   ALLOWED_REDIRECT_ORIGINS: string;
@@ -326,6 +327,72 @@ async function finishGoogle(env: Env, ctx: ExecutionContext, url: URL): Promise<
 }
 
 
+
+async function handleEmailWebhook(request: Request, env: Env): Promise<Response> {
+  const rawBody = await request.text();
+  const signatureHeader = request.headers.get('X-Emailit-Signature');
+
+  if (signatureHeader) {
+    const sigParts = signatureHeader.split(',').reduce((acc, part) => {
+      const [key, value] = part.split('=');
+      if (key && value) acc[key.trim()] = value.trim();
+      return acc;
+    }, {} as Record<string, string>);
+
+    const t = sigParts['t'];
+    const v1 = sigParts['v1'];
+
+    if (!t || !v1) {
+      return new Response('Invalid signature format', { status: 401 });
+    }
+
+    const key = await crypto.subtle.importKey('raw', encoder.encode(env.EMAILIT_WEBHOOK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(`${t}.${rawBody}`));
+    const signatureHex = Array.from(new Uint8Array(signatureBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (signatureHex !== v1) {
+      return new Response('Invalid signature', { status: 401 });
+    }
+  }
+
+  // Parse payload
+  let payload: any;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch (e) {
+    return new Response('Invalid JSON', { status: 400 });
+  }
+
+  // Normalize event
+  // Resend event is usually in payload.type
+  // EmailIt event might be in payload.event or payload.type. The prompt says "log the delivery state (e.g., email.delivered or email.bounced)"
+  let eventName = payload.type || payload.event || 'unknown';
+  if (eventName === 'email.sent') {
+    eventName = 'email.delivered';
+  }
+
+  // Pass to handleTelemetry
+  // Since handleTelemetry expects a Request, env, and body
+  const telemetryBody = {
+    event: eventName,
+    timestamp: new Date().toISOString(),
+    ...payload
+  };
+
+  // We don't necessarily need to return the exact response from handleTelemetry, but we can call it directly
+  // Note that handleTelemetry doesn't mutate, it just logs and returns json success
+  log('webhook_received', { event: eventName });
+
+  if (eventName) {
+    const key = `alert:${new Date().toISOString()}:${eventName}`;
+    await env.SECURITY_AUDIT_LOGS.put(key, JSON.stringify({ event: eventName, timestamp: telemetryBody.timestamp, payload }), { expirationTtl: 30 * 24 * 60 * 60 });
+  }
+  // Wait, let's just reuse handleTelemetry!
+  await handleTelemetry(request, env, telemetryBody);
+
+  return json(request, env, { success: true });
+}
+
 async function handleTelemetry(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
   const { event, timestamp, ...payload } = body;
 
@@ -349,8 +416,18 @@ async function handleTelemetry(request: Request, env: Env, body: Record<string, 
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request, env) });
+
+    if (request.method === 'GET' && url.pathname === '/api/v1/health') {
+      return json(request, env, { status: 'operational', timestamp: new Date().toISOString() });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/v1/webhooks/email') {
+      return handleEmailWebhook(request, env);
+    }
+
 
     if (request.method === 'POST') {
       const origin = request.headers.get('Origin');
