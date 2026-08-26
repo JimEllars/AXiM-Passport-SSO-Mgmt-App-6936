@@ -23,6 +23,13 @@
       }
     ]
   },
+  "kv_namespaces": [
+    {
+      "binding": "SECURITY_AUDIT_LOGS",
+      "id": "SECURITY_AUDIT_LOGS",
+      "preview_id": "SECURITY_AUDIT_LOGS_PREVIEW"
+    }
+  ],
   "migrations": [
     {
       "tag": "v1",
