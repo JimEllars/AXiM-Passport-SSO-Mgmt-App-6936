@@ -1,33 +1,25 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { extractHandoffToken, consumeTokenAndCleanUrl, buildPassportRedirectUrl } from '../services/passportClient';
 
 function Sandbox() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Using an explicit state to hide the login button instantly when processing begins
+  const [processingToken, setProcessingToken] = useState(false);
 
   useEffect(() => {
+    const token = extractHandoffToken();
     if (token) {
+      setProcessingToken(true);
       setLoading(true);
       const consumeToken = async () => {
         try {
           const workerUrl = import.meta.env.VITE_PASSPORT_WORKER_URL || 'http://localhost:8787';
-          const res = await fetch(`${workerUrl}/api/v1/auth/token/consume`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ token }),
-          });
-
-          if (!res.ok) {
-            throw new Error(`Failed to consume token: ${res.statusText}`);
+          const data = await consumeTokenAndCleanUrl({ workerUrl });
+          if (data) {
+             setResult(data);
           }
-
-          const data = await res.json();
-          setResult(data);
         } catch (err) {
           setError(err.message);
         } finally {
@@ -37,10 +29,12 @@ function Sandbox() {
 
       consumeToken();
     }
-  }, [token]);
+  }, []);
 
   const loginViaPassport = () => {
-    window.location.href = `/?redirect=${encodeURIComponent(window.location.origin + '/sandbox')}`;
+    const passportUrl = window.location.origin; // In local this routes to /
+    const callbackUrl = window.location.origin + '/sandbox';
+    window.location.href = buildPassportRedirectUrl({ passportUrl, callbackUrl });
   };
 
   return (
@@ -48,7 +42,7 @@ function Sandbox() {
       <h1>Nexus CRM (Sandbox)</h1>
       <p>Simulated target application.</p>
 
-      {!token && (
+      {!processingToken && !result && (
         <button
           onClick={loginViaPassport}
           style={{
@@ -61,7 +55,7 @@ function Sandbox() {
             marginTop: '1rem'
           }}
         >
-          Login via Passport
+          Simulate Nexus Login
         </button>
       )}
 
@@ -72,6 +66,8 @@ function Sandbox() {
       {result && (
         <div style={{ marginTop: '2rem', backgroundColor: '#111', padding: '1rem', borderRadius: '4px' }}>
           <h2 style={{ color: '#00ffcc' }}>Authentication Success!</h2>
+          <p>Verified: {result.valid ? 'True' : 'False'}</p>
+          {result.exp && <p>Expires: {new Date(result.exp * 1000).toLocaleString()}</p>}
           <pre>{JSON.stringify(result, null, 2)}</pre>
         </div>
       )}

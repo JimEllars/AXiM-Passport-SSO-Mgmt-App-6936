@@ -401,10 +401,12 @@ async function consumeTokenEndpoint(request: Request, env: Env, body: Record<str
 
   const success = await stateRequest(env, 'consumeToken', `jti:${payload.jti}`);
   if (!success) {
+    log('token_replay_rejected', { jti: payload.jti });
     return json(request, env, { error: 'Token already consumed' }, 403);
   }
 
-  return json(request, env, { valid: true, sub: payload.sub, aud: payload.aud });
+  log('token_consumed', { aud: typeof payload.aud === 'string' ? payload.aud : 'unknown', sub_prefix: typeof payload.sub === 'string' ? payload.sub.slice(0, 6) : 'unknow' });
+  return json(request, env, { valid: true, sub: payload.sub, aud: payload.aud, exp: payload.exp });
 }
 
 async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
