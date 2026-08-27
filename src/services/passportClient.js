@@ -68,6 +68,43 @@ export function buildPassportRedirectUrl({ passportUrl, callbackUrl }) {
 }
 
 /**
+ * Executes a pre-flight health check to the AXiM Passport edge worker.
+ * If successful, redirects the user to the AXiM Passport Hub for authentication.
+ * If the worker is unreachable (e.g., DNS error, infrastructure outage) or times out,
+ * it throws a structured 'PASSPORT_UNAVAILABLE' error.
+ *
+ * Downstream developers should wrap this call in a try/catch block and render a
+ * local fallback UI if the SSO gateway is down.
+ *
+ * @param {Object} params - The parameters.
+ * @param {string} params.passportUrl - The base URL of the AXiM Passport Hub.
+ * @param {string} params.callbackUrl - The URL to redirect back to after successful authentication.
+ * @param {string} params.workerUrl - The base URL of the AXiM Passport edge worker for health checking.
+ * @returns {Promise<void>} Resolves when the redirect is initiated, throws on pre-flight failure.
+ */
+export async function executePassportRedirect({ passportUrl, callbackUrl, workerUrl }) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const res = await fetch(`${workerUrl}/api/v1/health`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      throw new Error('PASSPORT_UNAVAILABLE');
+    }
+  } catch (err) {
+    throw new Error('PASSPORT_UNAVAILABLE');
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  window.location.href = buildPassportRedirectUrl({ passportUrl, callbackUrl });
+}
+
+/**
  * A React hook that automatically consumes a handoff token from the URL on mount,
  * hydrates the Supabase client, and cleans the URL.
  *
