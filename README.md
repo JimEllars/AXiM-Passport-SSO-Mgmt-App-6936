@@ -15,6 +15,11 @@ AXiM Passport is the browser-facing SSO handoff application for approved AXiM ap
 The Worker uses a Durable Object, rather than Workers KV, for short-lived OAuth state and SIWE nonces. Its atomic consume operation prevents a nonce or OAuth state value from being reused.
 Until the custom domain is mapped, the Pages hostname is also an approved frontend origin for wallet-flow staging. Google OAuth completes only after the custom hostname is active because its callback is intentionally fixed to the Passport domain.
 
+
+## Infrastructure Requirements
+
+Before traffic can be routed to the SSO gateway, a CNAME record for the Passport custom domain (e.g., `passport.axim.us.com`) MUST be mapped to the Cloudflare Pages target (`<project>.pages.dev`) in the Cloudflare DNS dashboard.
+
 ## Required Cloudflare configuration
 
 The Worker requires these secrets:

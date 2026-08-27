@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { extractHandoffToken, consumeTokenAndCleanUrl, buildPassportRedirectUrl } from '../services/passportClient';
+import { extractHandoffToken, consumeTokenAndCleanUrl, executePassportRedirect } from '../services/passportClient';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -52,10 +52,20 @@ function Sandbox() {
     }
   }, []);
 
-  const loginViaPassport = () => {
+  const loginViaPassport = async () => {
     const passportUrl = window.location.origin; // In local this routes to /
     const callbackUrl = window.location.origin + '/sandbox';
-    window.location.href = buildPassportRedirectUrl({ passportUrl, callbackUrl });
+    const workerUrl = import.meta.env.VITE_PASSPORT_WORKER_URL || 'http://localhost:8787';
+
+    try {
+      await executePassportRedirect({ passportUrl, callbackUrl, workerUrl });
+    } catch (err) {
+      if (err.message === 'PASSPORT_UNAVAILABLE') {
+        setError('Passport SSO gateway is currently unavailable. Please try again later.');
+      } else {
+        setError('An unexpected error occurred during redirect.');
+      }
+    }
   };
 
   return (
