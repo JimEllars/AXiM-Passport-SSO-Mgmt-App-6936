@@ -43,5 +43,8 @@
       "import": "./dist-sdk/passport-sdk.es.js",
       "require": "./dist-sdk/passport-sdk.umd.js"
     }
+  },
+  "peerDependencies": {
+    "react": "^18.0.0"
   }
 }
