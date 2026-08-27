@@ -23,6 +23,12 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
     const data = await res.json();
 
     if (data.valid) {
+      if (supabaseClient) {
+        await supabaseClient.auth.setSession({
+          access_token: token,
+          refresh_token: token
+        });
+      }
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
