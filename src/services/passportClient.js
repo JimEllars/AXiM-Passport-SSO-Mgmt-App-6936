@@ -105,3 +105,34 @@ export function usePassportHandoff({ workerUrl, supabaseClient }) {
 
   return { loading, data, error };
 }
+
+
+/**
+ * Executes a global logout by terminating the local application session
+ * and calling the AXiM Passport edge worker to clear the global Passport session.
+ *
+ * @param {Object} params - The parameters.
+ * @param {string} params.workerUrl - The base URL of the AXiM Passport edge worker.
+ * @param {Object} params.supabaseClient - An instantiated Supabase client to clear the local session.
+ * @param {string} params.token - The active JWT access token to authenticate the logout request.
+ * @returns {Promise<Object>} A promise that resolves to the logout response data.
+ */
+export async function executeGlobalLogout({ workerUrl, supabaseClient, token }) {
+  if (supabaseClient) {
+    await supabaseClient.auth.signOut();
+  }
+
+  const res = await fetch(`${workerUrl}/api/v1/auth/logout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to execute global logout: ${res.statusText}`);
+  }
+
+  return res.json();
+}

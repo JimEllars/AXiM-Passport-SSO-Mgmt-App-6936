@@ -118,6 +118,13 @@ export class AuthState implements DurableObject {
       return Response.json({ success: true });
     }
 
+    if (operation === 'logout') {
+      await this.state.storage.delete(`session:${key}`);
+      // Also maybe delete the sub as key, just to be thorough if they used `key` directly
+      await this.state.storage.delete(key);
+      return Response.json({ success: true });
+    }
+
     return new Response('Invalid state operation', { status: 400 });
   }
 
@@ -225,8 +232,12 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
   });
 
   const origin = request.headers.get('Origin');
-  if (origin && frontendOrigins(env).includes(origin)) {
-    headers.set('Access-Control-Allow-Origin', origin);
+  if (origin) {
+    const isFrontendOrigin = frontendOrigins(env).includes(origin);
+    const isAllowedRedirectOrigin = env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin);
+    if (isFrontendOrigin || isAllowedRedirectOrigin) {
+      headers.set('Access-Control-Allow-Origin', origin);
+    }
   }
 
   return headers;
@@ -247,7 +258,7 @@ async function parseJson(request: Request): Promise<Record<string, unknown> | nu
   }
 }
 
-async function stateRequest(env: Env, operation: 'put' | 'consume' | 'consumeToken', key: string, value?: AuthRecord): Promise<any> {
+async function stateRequest(env: Env, operation: 'put' | 'consume' | 'consumeToken' | 'logout', key: string, value?: AuthRecord): Promise<any> {
   const id = env.AUTH_STATE.idFromName('global-auth-state');
   const response = await env.AUTH_STATE.get(id).fetch('https://auth-state.internal', {
     method: 'POST',
@@ -258,6 +269,7 @@ async function stateRequest(env: Env, operation: 'put' | 'consume' | 'consumeTok
   if (!response.ok) throw new Error('Authentication state is unavailable');
   if (operation === 'put') return null;
   if (operation === 'consumeToken') return (await response.json<{ success: boolean }>()).success;
+  if (operation === 'logout') return (await response.json<{ success: boolean }>()).success;
   return (await response.json<{ record: AuthRecord | null }>()).record;
 }
 
@@ -458,6 +470,33 @@ async function consumeTokenEndpoint(request: Request, env: Env, body: Record<str
   return json(request, env, { valid: true, sub: payload.sub, aud: payload.aud, exp: payload.exp });
 }
 
+
+async function logoutEndpoint(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+  const { token } = body;
+
+  if (typeof token !== 'string') {
+    return json(request, env, { error: 'Invalid request' }, 400);
+  }
+
+  const payload = await verifyJwt(token, env.JWT_SECRET);
+  if (!payload) {
+    return json(request, env, { error: 'Invalid token' }, 403);
+  }
+
+  if (typeof payload.sub !== 'string') {
+    return json(request, env, { error: 'Invalid token payload' }, 403);
+  }
+
+  const origin = request.headers.get('Origin');
+  if (!origin || (!frontendOrigins(env).includes(origin) && !env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin))) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  await stateRequest(env, 'logout', payload.sub);
+  log('global_logout', { sub: payload.sub });
+  return json(request, env, { success: true });
+}
+
 async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
   const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
   if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
@@ -632,7 +671,7 @@ export default {
 
 
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const rateLimitedPaths = ['/api/v1/auth/verify', '/api/v1/auth/wallet/challenge', '/api/v1/auth/token/consume'];
+    const rateLimitedPaths = ['/api/v1/auth/verify', '/api/v1/auth/wallet/challenge', '/api/v1/auth/token/consume', '/api/v1/auth/logout'];
     if (rateLimitedPaths.includes(url.pathname)) {
       if (!checkRateLimit(ip)) {
         log('rate_limit_exceeded', { ip, path: url.pathname });
@@ -649,13 +688,25 @@ export default {
 
     if (request.method === 'POST') {
       const origin = request.headers.get('Origin');
-      if (!origin || !frontendOrigins(env).includes(origin)) return new Response('Forbidden', { status: 403 });
+
+      const isFrontendOrigin = origin ? frontendOrigins(env).includes(origin) : false;
+      const isAllowedRedirectOrigin = origin ? env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin) : false;
+
+      if (url.pathname === '/api/v1/auth/token/consume') {
+        if (!isAllowedRedirectOrigin) return new Response('Forbidden', { status: 403 });
+      } else if (url.pathname === '/api/v1/auth/logout') {
+        if (!isFrontendOrigin && !isAllowedRedirectOrigin) return new Response('Forbidden', { status: 403 });
+      } else {
+        // Default for other POSTs like verify, wallet challenge, telemetry
+        if (!isFrontendOrigin) return new Response('Forbidden', { status: 403 });
+      }
 
       const body = await parseJson(request);
       if (!body) return json(request, env, { error: 'Invalid request body' }, 400);
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, body);
+      if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body);
       if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, body);
     }
 
