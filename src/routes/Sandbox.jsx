@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
 import { extractHandoffToken, consumeTokenAndCleanUrl, buildPassportRedirectUrl } from '../services/passportClient';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
+
 
 function Sandbox() {
   const [result, setResult] = useState(null);
@@ -7,6 +14,20 @@ function Sandbox() {
   const [error, setError] = useState(null);
   // Using an explicit state to hide the login button instantly when processing begins
   const [processingToken, setProcessingToken] = useState(false);
+  const [authState, setAuthState] = useState('Logged Out');
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setAuthState('Authenticated');
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) setAuthState('Authenticated');
+      else setAuthState('Logged Out');
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
 
   useEffect(() => {
     const token = extractHandoffToken();
@@ -16,7 +37,7 @@ function Sandbox() {
       const consumeToken = async () => {
         try {
           const workerUrl = import.meta.env.VITE_PASSPORT_WORKER_URL || 'http://localhost:8787';
-          const data = await consumeTokenAndCleanUrl({ workerUrl });
+          const data = await consumeTokenAndCleanUrl({ workerUrl, supabaseClient: supabase });
           if (data) {
              setResult(data);
           }
@@ -41,6 +62,10 @@ function Sandbox() {
     <div style={{ padding: '2rem', color: '#fff', fontFamily: 'monospace' }}>
       <h1>Nexus CRM (Sandbox)</h1>
       <p>Simulated target application.</p>
+      <div style={{ marginTop: '1rem', padding: '10px', backgroundColor: '#222', display: 'inline-block', borderRadius: '4px' }}>
+        <strong>Supabase Auth State: </strong>
+        <span style={{ color: authState === 'Authenticated' ? '#00ffcc' : '#ffcc00' }}>{authState}</span>
+      </div><br/>
 
       {!processingToken && !result && (
         <button
