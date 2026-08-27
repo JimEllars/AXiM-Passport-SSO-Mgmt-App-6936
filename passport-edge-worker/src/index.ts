@@ -13,6 +13,7 @@ interface Env {
   JWT_SECRET: string;
   PASSPORT_ORIGIN: string;
   SUPABASE_ANON_KEY: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
   SUPABASE_URL: string;
   TURNSTILE_ACTION: string;
   TURNSTILE_SECRET_KEY: string;
@@ -324,6 +325,47 @@ async function startWalletChallenge(request: Request, env: Env, body: Record<str
   return json(request, env, { nonce, message });
 }
 
+async function resolveUniversalId(address: string, env: Env): Promise<string> {
+  const adminHeaders = {
+    'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
+    'Content-Type': 'application/json'
+  };
+
+  const email = `${address.toLowerCase()}@wallet.local`;
+
+  const searchUrl = new URL('/auth/v1/admin/users', env.SUPABASE_URL);
+  const searchRes = await fetch(searchUrl.toString(), {
+    headers: adminHeaders
+  });
+
+  if (searchRes.ok) {
+    const data = await searchRes.json() as any;
+    const existingUser = data.users?.find((u: any) => u.email === email);
+    if (existingUser) {
+      return existingUser.id;
+    }
+  }
+
+  const createUrl = new URL('/auth/v1/admin/users', env.SUPABASE_URL);
+  const createRes = await fetch(createUrl.toString(), {
+    method: 'POST',
+    headers: adminHeaders,
+    body: JSON.stringify({
+      email,
+      email_confirm: true,
+      user_metadata: { address: address.toLowerCase() }
+    })
+  });
+
+  if (createRes.ok) {
+    const data = await createRes.json() as any;
+    return data.id || data.user?.id;
+  }
+
+  throw new Error('Failed to resolve universal ID for wallet address');
+}
+
 async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
   const redirectUrl = approvedRedirect(env, body.redirect);
   const credential = body.credential;
@@ -359,7 +401,14 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
     return json(request, env, { error: 'Authentication could not be verified' }, 403);
   }
 
-  const token = await mintHandoffToken(address.toLowerCase(), redirectUrl, env);
+  let uuid;
+  try {
+    uuid = await resolveUniversalId(address as string, env);
+  } catch (error) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+  }
+
+  const token = await mintHandoffToken(uuid, redirectUrl, env);
   log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
   return json(request, env, { token });
 }
