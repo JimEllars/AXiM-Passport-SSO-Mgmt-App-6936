@@ -10,10 +10,12 @@ export default defineConfig({
       fileName: (format) => `passport-sdk.${format}.js`,
     },
     rollupOptions: {
-      // Ensure we don't bundle dependencies that are external to the SDK, though passportClient mainly relies on native fetch.
-      external: [],
+      // Ensure we don't bundle dependencies that are external to the SDK
+      external: ['react'],
       output: {
-        globals: {},
+        globals: {
+          react: 'React',
+        },
       },
     },
     emptyOutDir: true,
