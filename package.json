@@ -1,6 +1,5 @@
 {
-  "name": "quest-react-starter",
-  "private": true,
+  "name": "@axim/passport-sdk",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -46,5 +45,8 @@
   },
   "peerDependencies": {
     "react": "^18.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   }
 }

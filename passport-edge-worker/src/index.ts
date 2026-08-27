@@ -7,6 +7,7 @@ interface Env {
   EMAILIT_WEBHOOK_SECRET: string;
   RESEND_API_KEY: string;
   ADMIN_ALERT_EMAIL: string;
+  ADMIN_API_KEY: string;
   ALLOWED_REDIRECT_ORIGINS: string;
   AUTH_STATE: DurableObjectNamespace;
   FRONTEND_ORIGINS: string;
@@ -467,6 +468,7 @@ async function consumeTokenEndpoint(request: Request, env: Env, body: Record<str
   }
 
   log('token_consumed', { aud: typeof payload.aud === 'string' ? payload.aud : 'unknown', sub_prefix: typeof payload.sub === 'string' ? payload.sub.slice(0, 6) : 'unknow' });
+  await env.SECURITY_AUDIT_LOGS.put(`alert:${new Date().toISOString()}:token_consumed`, JSON.stringify({ event: 'token_consumed', timestamp: new Date().toISOString() }), { expirationTtl: 30 * 24 * 60 * 60 });
   return json(request, env, { valid: true, sub: payload.sub, aud: payload.aud, exp: payload.exp });
 }
 
@@ -643,6 +645,33 @@ async function handleTelemetry(request: Request, env: Env, body: Record<string, 
 }
 
 export default {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const checkSupabase = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(env.SUPABASE_URL + '/rest/v1/', {
+          headers: { apikey: env.SUPABASE_ANON_KEY },
+          signal: controller.signal as any
+        });
+        clearTimeout(timeout);
+        if (!res.ok) {
+          throw new Error(`Supabase returned ${res.status}`);
+        }
+      } catch (err: any) {
+        clearTimeout(timeout);
+        const emailManager = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+        await emailManager.send({
+          from: "System Alerts <alerts@axim.us.com>",
+          to: env.ADMIN_ALERT_EMAIL,
+          subject: "System Degraded: Supabase Unreachable",
+          html: `<p>Active monitoring failed to reach Supabase API.</p><p>Error: ${err.message}</p>`,
+        });
+      }
+    };
+    ctx.waitUntil(checkSupabase());
+  },
+
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const response = await this.handleFetch(request, env, ctx);
     const newHeaders = new Headers(response.headers);
@@ -661,7 +690,44 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request, env) });
 
+
+    if (request.method === 'GET' && url.pathname === '/api/v1/telemetry/health-stats') {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || authHeader !== env.ADMIN_API_KEY) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+
+      const list = await env.SECURITY_AUDIT_LOGS.list({ prefix: 'alert:' });
+      let rejections = 0;
+      let consumptions = 0;
+
+      // The instruction specifies "recent 403 rejections and token consumptions".
+      // We will iterate through keys or fetch their values to determine the type.
+      // But typically we can just count based on event types if they are in the key name,
+      // or we can fetch them. Let's fetch the values to check their event type.
+
+      const values = await Promise.all(list.keys.map(k => env.SECURITY_AUDIT_LOGS.get(k.name, 'json')));
+
+      for (const val of values) {
+        if (val) {
+          const v = val as any;
+          if (v.event === 'unauthorized_access' || v.event === 'rate_limit_exceeded' || v.payload?.status === 403) {
+            rejections++;
+          }
+          if (v.event === 'token_consumed' || v.event === 'token_consume') {
+            consumptions++;
+          }
+        }
+      }
+
+      return json(request, env, {
+        rejections,
+        consumptions
+      });
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/v1/health') {
+
       return json(request, env, { status: 'operational', timestamp: new Date().toISOString() });
     }
 
