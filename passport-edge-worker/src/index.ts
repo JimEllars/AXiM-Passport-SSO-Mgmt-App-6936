@@ -53,9 +53,18 @@ const SECURITY_HEADERS = {
 };
 
 const ipRequestCounts = new Map<string, { count: number; expiresAt: number }>();
+let lastCleanup = Date.now();
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
+  if (now - lastCleanup > 60000) {
+    for (const [key, value] of ipRequestCounts.entries()) {
+      if (value.expiresAt < now) {
+        ipRequestCounts.delete(key);
+      }
+    }
+    lastCleanup = now;
+  }
   const record = ipRequestCounts.get(ip);
   if (!record || record.expiresAt < now) {
     ipRequestCounts.set(ip, { count: 1, expiresAt: now + RATE_LIMIT_WINDOW_MS });
@@ -71,14 +80,6 @@ function checkRateLimit(ip: string): boolean {
 }
 
 // Simple cleanup function (could be called occasionally or in an alarm, but for edge workers with short lifespan, Map is fine)
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of ipRequestCounts.entries()) {
-    if (value.expiresAt < now) {
-      ipRequestCounts.delete(key);
-    }
-  }
-}, 60000);
 
 
 export class AuthState implements DurableObject {
@@ -402,24 +403,24 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
 
   const state = await stateRequest(env, 'consume', `wallet:${nonce}`);
   if (!state || state.address !== address.toLowerCase() || state.chainId !== chainId || state.redirectUrl !== redirectUrl) {
-    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+    return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
 
   const valid = await verifyMessage({
     address: address as `0x${string}`,
-    message,
+    message: message as string,
     signature: signature as `0x${string}`,
   });
-  if (!valid) {
+  if (!valid || !(message as string).includes(nonce as string)) {
     await sendUnauthorizedAlert(env, ctx, address as string, 'Wallet');
-    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+    return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
 
   let uuid;
   try {
     uuid = await resolveUniversalId(address as string, env);
   } catch (error) {
-    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+    return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
 
   const token = await mintHandoffToken(uuid, redirectUrl, env);
@@ -536,7 +537,7 @@ async function startGoogle(request: Request, env: Env, url: URL): Promise<Respon
   return Response.redirect(authorize.toString(), 302);
 }
 
-async function finishGoogle(env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
+async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   const code = url.searchParams.get('code');
   const stateKey = url.searchParams.get('state');
   if (!code || !stateKey) return new Response('Authentication could not be verified', { status: 403 });
@@ -563,8 +564,13 @@ async function finishGoogle(env: Env, ctx: ExecutionContext, url: URL): Promise<
     return new Response('Authentication could not be verified', { status: 403 });
   }
 
-  const handoff = new URL(state.redirectUrl);
-  handoff.searchParams.set('token', await mintHandoffToken(result.user.id, state.redirectUrl, env));
+  const approvedRedir = approvedRedirect(env, state.redirectUrl);
+  if (!approvedRedir) {
+    return json(request, env, { error: 'Forbidden' }, 403);
+  }
+
+  const handoff = new URL(approvedRedir);
+  handoff.searchParams.set('token', await mintHandoffToken(result.user.id, approvedRedir, env));
   log('google_authenticated');
   return Response.redirect(handoff.toString(), 302);
 }
@@ -790,7 +796,7 @@ export default {
     }
 
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(env, ctx, url);
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(request, env, ctx, url);
     return new Response('Not found', { status: 404 });
   },
 };
