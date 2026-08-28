@@ -40,8 +40,8 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
     if (data.valid) {
       if (supabaseClient) {
         await supabaseClient.auth.setSession({
-          access_token: token,
-          refresh_token: token
+          access_token: data.supabase_access_token,
+          refresh_token: ''
         });
       }
       window.history.replaceState({}, document.title, window.location.pathname);

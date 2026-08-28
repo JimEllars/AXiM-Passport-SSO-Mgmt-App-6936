@@ -14,6 +14,7 @@ interface Env {
   JWT_SECRET: string;
   PASSPORT_ORIGIN: string;
   SUPABASE_ANON_KEY: string;
+  SUPABASE_JWT_SECRET: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   SUPABASE_URL: string;
   TURNSTILE_ACTION: string;
@@ -469,7 +470,19 @@ async function consumeTokenEndpoint(request: Request, env: Env, body: Record<str
 
   log('token_consumed', { aud: typeof payload.aud === 'string' ? payload.aud : 'unknown', sub_prefix: typeof payload.sub === 'string' ? payload.sub.slice(0, 6) : 'unknow' });
   await env.SECURITY_AUDIT_LOGS.put(`alert:${new Date().toISOString()}:token_consumed`, JSON.stringify({ event: 'token_consumed', timestamp: new Date().toISOString() }), { expirationTtl: 30 * 24 * 60 * 60 });
-  return json(request, env, { valid: true, sub: payload.sub, aud: payload.aud, exp: payload.exp });
+
+  // Mint new Supabase JWT
+  const supabaseTokenPayload = {
+    aud: 'authenticated',
+    role: 'authenticated',
+    sub: payload.sub as string,
+    exp: now + 3600 // 1 hour from now
+  };
+  const supabase_access_token = await signJwt(supabaseTokenPayload, env.SUPABASE_JWT_SECRET);
+
+  return json(request, env, {
+    valid: true, sub: payload.sub, aud: payload.aud, exp: payload.exp, supabase_access_token
+  });
 }
 
 
