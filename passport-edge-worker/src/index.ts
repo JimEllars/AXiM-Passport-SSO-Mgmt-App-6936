@@ -40,6 +40,12 @@ interface TurnstileResult {
 const encoder = new TextEncoder();
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=UTF-8' };
 const ETHEREUM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
+
+const AUTHORIZED_IDENTITIES: string[] = [
+  "admin@axim.us.com",
+  "test@axim.us.com",
+  "0x1234567890123456789012345678901234567890"
+];
 const HEX_SIGNATURE = /^0x[a-fA-F0-9]{130}$/;
 
 const RATE_LIMIT_WINDOW_MS = 10000; // 10 seconds
@@ -406,6 +412,17 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
     return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
 
+  if (!AUTHORIZED_IDENTITIES.includes((address as string).toLowerCase()) && !AUTHORIZED_IDENTITIES.includes(address as string)) {
+    const emailManager = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+    ctx.waitUntil(emailManager.send({
+      from: "System Alerts <alerts@axim.us.com>",
+      to: env.ADMIN_ALERT_EMAIL,
+      subject: "Unauthorized Access Attempt Blocked",
+      html: `<p>Blocked Web3 login attempt for address: ${address}</p>`,
+    }).catch(console.error));
+    return json(request, env, { error: 'Forbidden' }, 403);
+  }
+
   const valid = await verifyMessage({
     address: address as `0x${string}`,
     message: message as string,
@@ -562,6 +579,18 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
     const identifier = (result.user as any)?.email || result.user?.id || 'Unknown Google User';
     await sendUnauthorizedAlert(env, ctx, identifier, 'Google SSO');
     return new Response('Authentication could not be verified', { status: 403 });
+  }
+
+  const userEmail = (result.user as any)?.email;
+  if (!userEmail || (!AUTHORIZED_IDENTITIES.includes(userEmail.toLowerCase()) && !AUTHORIZED_IDENTITIES.includes(userEmail))) {
+    const emailManager = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+    ctx.waitUntil(emailManager.send({
+      from: "System Alerts <alerts@axim.us.com>",
+      to: env.ADMIN_ALERT_EMAIL,
+      subject: "Unauthorized Access Attempt Blocked",
+      html: `<p>Blocked Google login attempt for email: ${userEmail || 'Unknown'}</p>`,
+    }).catch(console.error));
+    return new Response('Forbidden', { status: 403 });
   }
 
   const approvedRedir = approvedRedirect(env, state.redirectUrl);
