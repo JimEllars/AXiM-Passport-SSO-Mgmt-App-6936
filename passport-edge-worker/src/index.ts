@@ -693,7 +693,7 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/api/v1/telemetry/health-stats') {
       const authHeader = request.headers.get('Authorization');
-      if (!authHeader || authHeader !== env.ADMIN_API_KEY) {
+      if (!authHeader || authHeader !== 'Bearer ' + env.ADMIN_API_KEY) {
         return new Response('Unauthorized', { status: 401 });
       }
 
