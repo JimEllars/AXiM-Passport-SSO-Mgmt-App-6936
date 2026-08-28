@@ -11,6 +11,7 @@
     "SUPABASE_URL": "https://pvbcdndqjguzqeafhwhw.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "",
     "SUPABASE_ANON_KEY": "",
+    "SUPABASE_JWT_SECRET": "",
     "WALLET_CHAIN_ID": "1",
     "TURNSTILE_ACTION": "passport_auth",
     "EMAILIT_API_KEY": "",

@@ -15,15 +15,24 @@ function Sandbox() {
   // Using an explicit state to hide the login button instantly when processing begins
   const [processingToken, setProcessingToken] = useState(false);
   const [authState, setAuthState] = useState('Logged Out');
+  const [sessionInfo, setSessionInfo] = useState(null);
 
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setAuthState('Authenticated');
+      if (session) {
+        setAuthState('Authenticated');
+        setSessionInfo(session);
+      }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) setAuthState('Authenticated');
-      else setAuthState('Logged Out');
+      if (session) {
+        setAuthState('Authenticated');
+        setSessionInfo(session);
+      } else {
+        setAuthState('Logged Out');
+        setSessionInfo(null);
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -76,6 +85,15 @@ function Sandbox() {
         <strong>Supabase Auth State: </strong>
         <span style={{ color: authState === 'Authenticated' ? '#00ffcc' : '#ffcc00' }}>{authState}</span>
       </div><br/>
+
+      {sessionInfo && (
+        <div style={{ marginTop: '1rem', padding: '10px', backgroundColor: '#222', display: 'inline-block', borderRadius: '4px' }}>
+          <strong>Supabase Session Exists!</strong><br/>
+          <span>User Sub (ID): {sessionInfo.user?.id}</span><br/>
+          <span>Role: {sessionInfo.user?.role}</span>
+        </div>
+      )}
+      <br/>
 
       {!processingToken && !result && (
         <button
