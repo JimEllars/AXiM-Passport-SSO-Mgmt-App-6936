@@ -80,3 +80,6 @@ The following GitHub Repository Secrets are required to authenticate with Cloudf
 There are two primary deployment workflows:
 1. **Edge Worker Deployment**: Triggers when files inside the `passport-edge-worker/` directory change on the `main` branch.
 2. **Frontend Pages Deployment**: Triggers when frontend files (e.g., `src/`, `package.json`, `index.html`) change on the `main` branch.
+
+## Deployment Log
+For a record of production secret injections and DNS verifications, please see [DEPLOYMENT_LOG.md](DEPLOYMENT_LOG.md).
