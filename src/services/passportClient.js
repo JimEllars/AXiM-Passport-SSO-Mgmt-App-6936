@@ -101,7 +101,7 @@ export async function executePassportRedirect({ passportUrl, callbackUrl, worker
     clearTimeout(timeoutId);
   }
 
-  window.location.href = buildPassportRedirectUrl({ passportUrl, callbackUrl });
+  window.location.assign(buildPassportRedirectUrl({ passportUrl, callbackUrl }));
 }
 
 /**
