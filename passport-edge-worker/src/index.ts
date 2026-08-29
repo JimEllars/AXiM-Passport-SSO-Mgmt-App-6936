@@ -774,7 +774,7 @@ export default {
       });
     }
 
-    if (request.method === 'GET' && url.pathname === '/api/v1/health') {
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/v1/health') {
 
       return json(request, env, { status: 'operational', timestamp: new Date().toISOString() });
     }
