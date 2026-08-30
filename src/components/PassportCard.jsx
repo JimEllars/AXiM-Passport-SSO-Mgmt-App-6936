@@ -70,10 +70,17 @@ function PassportCard({
       <SecurityStatus readiness={readiness} />
 
       {!redirectUrl && (
-        <div className="configuration-warning" role="alert">
-          <SafeIcon icon={FiAlertCircle} />
-          <span>{redirectError || 'An approved application callback is required.'}</span>
-        </div>
+        redirectError === 'The requested application is not an approved AXiM destination.' ? (
+          <div className="error-message" role="alert" style={{ borderColor: 'red', color: 'red', marginBottom: '24px' }}>
+            <SafeIcon icon={FiAlertCircle} />
+            <span>Security Lockout: Unauthorized Application Callback</span>
+          </div>
+        ) : (
+          <div className="configuration-warning" role="alert">
+            <SafeIcon icon={FiAlertCircle} />
+            <span>{redirectError || 'An approved application callback is required.'}</span>
+          </div>
+        )
       )}
 
       <section className="auth-options" aria-label="Authentication options">

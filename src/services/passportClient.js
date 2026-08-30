@@ -173,3 +173,33 @@ export async function executeGlobalLogout({ workerUrl, supabaseClient, token }) 
 
   return res.json();
 }
+
+
+/**
+ * Validates the current local Supabase session.
+ * Checks if a session exists and has not expired.
+ *
+ * @param {Object} supabaseClient - An instantiated Supabase client.
+ * @returns {Promise<boolean>} True if the session is valid, false otherwise.
+ */
+export async function validateSession(supabaseClient) {
+  if (!supabaseClient) return false;
+
+  try {
+    const { data: { session }, error } = await supabaseClient.auth.getSession();
+
+    if (error || !session || !session.access_token) {
+      return false;
+    }
+
+    // Check if the session is expired based on the expires_at timestamp if present
+    if (session.expires_at) {
+      const isExpired = Date.now() / 1000 > session.expires_at;
+      return !isExpired;
+    }
+
+    return true;
+  } catch (err) {
+    return false;
+  }
+}

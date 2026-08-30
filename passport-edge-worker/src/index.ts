@@ -606,7 +606,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
 
 
 
-async function handleEmailWebhook(request: Request, env: Env): Promise<Response> {
+async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const rawBody = await request.text();
   const signatureHeader = request.headers.get('X-Emailit-Signature');
 
@@ -662,16 +662,23 @@ async function handleEmailWebhook(request: Request, env: Env): Promise<Response>
   log('webhook_received', { event: eventName });
 
   if (eventName) {
-    const key = `alert:${new Date().toISOString()}:${eventName}`;
-    await env.SECURITY_AUDIT_LOGS.put(key, JSON.stringify({ event: eventName, timestamp: telemetryBody.timestamp, payload }), { expirationTtl: 30 * 24 * 60 * 60 });
+    ctx.waitUntil(dispatchTelemetryUplink(env, eventName, telemetryBody.timestamp as string, payload));
   }
-  // Wait, let's just reuse handleTelemetry!
-  await handleTelemetry(request, env, telemetryBody);
 
   return json(request, env, { success: true });
 }
 
-async function handleTelemetry(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+async function dispatchTelemetryUplink(env: Env, event: string, timestamp: string, payload: any) {
+  try {
+    const identifier = payload.address || payload.method || event;
+    const key = `alert:${timestamp || new Date().toISOString()}:${identifier}`;
+    await env.SECURITY_AUDIT_LOGS.put(key, JSON.stringify({ event, timestamp, payload }), { expirationTtl: 30 * 24 * 60 * 60 });
+  } catch (error) {
+    // fail-safe silent catch
+  }
+}
+
+async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
   const { event, timestamp, ...payload } = body;
 
   // Sanitize payload just in case frontend missed something
@@ -682,11 +689,7 @@ async function handleTelemetry(request: Request, env: Env, body: Record<string, 
   if (typeof event === 'string') {
     log(event, payload as Record<string, string | number | boolean>);
 
-    if (event === 'unauthorized_access') {
-      const identifier = payload.address || payload.method || 'unknown';
-      const key = `alert:${timestamp || new Date().toISOString()}:${identifier}`;
-      await env.SECURITY_AUDIT_LOGS.put(key, JSON.stringify({ event, timestamp, payload }), { expirationTtl: 30 * 24 * 60 * 60 });
-    }
+    ctx.waitUntil(dispatchTelemetryUplink(env, event, timestamp as string, payload));
   }
 
   return json(request, env, { success: true });
@@ -780,7 +783,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/api/v1/webhooks/email') {
-      return handleEmailWebhook(request, env);
+      return handleEmailWebhook(request, env, ctx);
     }
 
 
@@ -821,7 +824,7 @@ export default {
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, body);
       if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body);
-      if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, body);
+      if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, ctx, body);
     }
 
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
