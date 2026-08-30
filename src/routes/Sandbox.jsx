@@ -9,7 +9,7 @@ const passportUrl = import.meta.env.VITE_PASSPORT_URL || 'https://passport.axim.
 
 function Sandbox() {
   const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [authState, setAuthState] = useState('Checking');
   const [sessionInfo, setSessionInfo] = useState(null);
@@ -27,6 +27,7 @@ function Sandbox() {
           if (isMounted) {
             setResult(data);
             setLoading(false);
+            setAuthState('Authenticated');
           }
         } catch (err) {
           if (isMounted) {
@@ -53,34 +54,9 @@ function Sandbox() {
       }
 
       if (!currentSession && !token) {
-        if (isMounted) setLoading(true);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
-
-        try {
-          const res = await fetch(`${passportUrl}/api/v1/health`, {
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-
-          if (res.ok) {
-            const redirectUrl = buildPassportRedirectUrl({
-              passportUrl,
-              callbackUrl: window.location.href
-            });
-            window.location.assign(redirectUrl);
-            return;
-          } else {
-            throw new Error('Passport health check failed');
-          }
-        } catch (err) {
-          clearTimeout(timeoutId);
-          if (isMounted) {
-            setError('Passport SSO gateway is currently unavailable. Falling back to local login.');
-            setShowLegacyLogin(true);
-            setLoading(false);
-          }
+        if (isMounted) {
+          setAuthState('Logged Out');
+          setLoading(false);
         }
       }
     };
@@ -113,6 +89,35 @@ function Sandbox() {
     }
   }, []);
 
+  const handleSimulateLogin = async () => {
+    setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    try {
+      const res = await fetch(`${passportUrl}/api/v1/health`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const redirectUrl = buildPassportRedirectUrl({
+          passportUrl,
+          callbackUrl: window.location.href
+        });
+        window.location.assign(redirectUrl);
+        return;
+      } else {
+        throw new Error('Passport health check failed');
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      setError('Passport SSO gateway is currently unavailable. Falling back to local login.');
+      setShowLegacyLogin(true);
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#000', color: '#fff', fontSize: '24px', fontFamily: 'monospace' }}>
@@ -139,6 +144,12 @@ function Sandbox() {
         </div>
       )}
       <br/>
+
+      {authState === 'Logged Out' && !showLegacyLogin && !result && (
+        <button onClick={handleSimulateLogin} style={{ marginTop: '2rem', padding: '10px', backgroundColor: '#00ffcc', color: '#000', border: 'none', cursor: 'pointer', borderRadius: '4px' }}>
+          Simulate Nexus Login
+        </button>
+      )}
 
       {showLegacyLogin && (
         <div style={{ marginTop: '2rem', padding: '1rem', border: '1px solid #444', borderRadius: '4px', maxWidth: '400px' }}>

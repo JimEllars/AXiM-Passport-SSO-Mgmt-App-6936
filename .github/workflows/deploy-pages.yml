@@ -28,6 +28,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Run E2E Tests
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
