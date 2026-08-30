@@ -8,7 +8,8 @@
     "lint": "eslint .",
     "lint:error": "eslint . --quiet",
     "preview": "vite preview",
-    "build:sdk": "vite build -c vite.sdk.config.js"
+    "build:sdk": "vite build -c vite.sdk.config.js",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@axim/passport-sdk": "github:jimellars/axim-passport-sso-mgmt-app-6936#main",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
+    "@playwright/test": "^1.62.1",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.9.1",
