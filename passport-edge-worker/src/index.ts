@@ -1,8 +1,11 @@
+import { dispatchCoreTelemetry } from './telemetry';
 import { EmailDispatchManager } from './emailService';
 
 import { verifyMessage } from 'viem';
 
-interface Env {
+export interface Env {
+  AXIM_CORE_API_URL: string;
+  AXIM_INTERNAL_KEY: string;
   EMAILIT_API_KEY: string;
   EMAILIT_WEBHOOK_SECRET: string;
   RESEND_API_KEY: string;
@@ -420,6 +423,7 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
       subject: "Unauthorized Access Attempt Blocked",
       html: `<p>Blocked Web3 login attempt for address: ${address}</p>`,
     }).catch(console.error));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { address, reason: 'unauthorized_identity' }));
     return json(request, env, { error: 'Forbidden' }, 403);
   }
 
@@ -442,10 +446,11 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
 
   const token = await mintHandoffToken(uuid, redirectUrl, env);
   log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { address, chainId }));
   return json(request, env, { token });
 }
 
-async function consumeTokenEndpoint(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+async function consumeTokenEndpoint(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
   const { token, origin } = body;
 
   if (typeof token !== 'string' || typeof origin !== 'string') {
@@ -488,6 +493,7 @@ async function consumeTokenEndpoint(request: Request, env: Env, body: Record<str
 
   log('token_consumed', { aud: typeof payload.aud === 'string' ? payload.aud : 'unknown', sub_prefix: typeof payload.sub === 'string' ? payload.sub.slice(0, 6) : 'unknow' });
   await env.SECURITY_AUDIT_LOGS.put(`alert:${new Date().toISOString()}:token_consumed`, JSON.stringify({ event: 'token_consumed', timestamp: new Date().toISOString() }), { expirationTtl: 30 * 24 * 60 * 60 });
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'token.exchanged', { jti: payload.jti, origin, sub: payload.sub }));
 
   // Mint new Supabase JWT
   const supabaseTokenPayload = {
@@ -590,6 +596,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
       subject: "Unauthorized Access Attempt Blocked",
       html: `<p>Blocked Google login attempt for email: ${userEmail || 'Unknown'}</p>`,
     }).catch(console.error));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }));
     return new Response('Forbidden', { status: 403 });
   }
 
@@ -601,6 +608,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
   const handoff = new URL(approvedRedir);
   handoff.searchParams.set('token', await mintHandoffToken(result.user.id, approvedRedir, env));
   log('google_authenticated');
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: (result.user as any)?.email, userId: result.user.id }));
   return Response.redirect(handoff.toString(), 302);
 }
 
@@ -822,7 +830,7 @@ export default {
       if (!body) return json(request, env, { error: 'Invalid request body' }, 400);
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, body);
+      if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body);
       if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, ctx, body);
     }

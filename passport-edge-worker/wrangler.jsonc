@@ -5,6 +5,7 @@
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
+    "AXIM_CORE_API_URL": "https://api.axim.us.com",
     "PASSPORT_ORIGIN": "https://passport.axim.us.com",
     "FRONTEND_ORIGINS": "https://passport.axim.us.com,https://axim-passport.pages.dev",
     "ALLOWED_REDIRECT_ORIGINS": "https://nexus.axim.us.com,https://echo.axim.us.com,https://onyx.axim.us.com",
@@ -18,7 +19,8 @@
     "EMAILIT_WEBHOOK_SECRET": "",
     "RESEND_API_KEY": "",
     "ADMIN_ALERT_EMAIL": "",
-    "ADMIN_API_KEY": ""
+    "ADMIN_API_KEY": "",
+    "AXIM_INTERNAL_KEY": ""
   },
   "durable_objects": {
     "bindings": [
