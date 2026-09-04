@@ -4,8 +4,14 @@ import {
   getGoogleAuthUrl,
   requestWalletChallenge,
   publishTelemetry,
+  checkWorkerHealth,
 } from '../services/passportApi';
+import { createClient } from '@supabase/supabase-js';
 import { getWalletAccount, signWalletChallenge } from '../services/walletAuth';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 function usePassportAuth(redirectUrl) {
   const [selectedMethod, setSelectedMethod] = useState('');
@@ -40,7 +46,7 @@ function usePassportAuth(redirectUrl) {
       throw new Error('A valid AXiM application callback is required to continue.');
     }
 
-    if (!import.meta.env.VITE_PASSPORT_WORKER_URL) {
+    if (!import.meta.env.VITE_PASSPORT_EDGE_URL) {
       throw new Error('Passport Worker is not configured for this deployment.');
     }
 
@@ -61,7 +67,7 @@ function usePassportAuth(redirectUrl) {
     resetVerification();
   }, [resetVerification]);
 
-  const startGoogle = useCallback(() => {
+  const startGoogle = useCallback(async () => {
     if (busy) return;
     if (!selectMethod('google')) {
       return;
@@ -70,6 +76,14 @@ function usePassportAuth(redirectUrl) {
     try {
       ensureReady();
       setBusy(true);
+
+      const isHealthy = await checkWorkerHealth();
+      if (!isHealthy && supabase) {
+        setError('Standard gateway unreachable, utilizing direct secure connection...');
+        await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: redirectUrl } });
+        return;
+      }
+
       window.location.assign(getGoogleAuthUrl(redirectUrl, turnstileToken));
     } catch (authenticationError) {
       if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {

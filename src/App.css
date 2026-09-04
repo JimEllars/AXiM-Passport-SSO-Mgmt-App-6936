@@ -498,7 +498,8 @@ h1 em {
   }
 
   .passport-card {
-    padding: 34px 24px 25px;
+    padding: 24px 20px 20px;
+    border-radius: 6px;
   }
 
   .brand {
@@ -540,4 +541,29 @@ h1 em {
 
 .processing-state span {
   flex: 1;
+}
+
+@media (max-width: 428px) {
+  .passport-shell {
+    padding: 16px 12px 12px;
+  }
+
+  .passport-card {
+    padding: 20px 16px 18px;
+    border-radius: 4px;
+    width: 100%;
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(28px, 8vw, 36px);
+  }
+
+  .status-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .status-item:last-child {
+    grid-column: span 2;
+  }
 }

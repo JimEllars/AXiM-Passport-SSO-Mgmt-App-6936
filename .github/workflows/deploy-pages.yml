@@ -25,17 +25,42 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build SDK
+        run: npm run build:sdk
+
       - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://mock.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'mock-anon-key' }}
+          VITE_PASSPORT_EDGE_URL: ${{ secrets.VITE_PASSPORT_EDGE_URL || 'https://mock-worker.axim.us.com' }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA' }}
         run: npm run build
 
       - name: Run E2E Tests
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://mock.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'mock-anon-key' }}
+          VITE_PASSPORT_EDGE_URL: ${{ secrets.VITE_PASSPORT_EDGE_URL || 'https://mock-worker.axim.us.com' }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA' }}
         run: |
           npx playwright install --with-deps chromium
           npm run test:e2e
 
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "::error::Build output directory 'dist' does not exist."
+            return 1
+          fi
+
       - name: Deploy to Cloudflare Pages
+        id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy ./dist --project-name axim-passport --branch main
+
+      - name: Check Deployment Authentication
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: echo "::error::Cloudflare deployment failed. Please verify CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets."
