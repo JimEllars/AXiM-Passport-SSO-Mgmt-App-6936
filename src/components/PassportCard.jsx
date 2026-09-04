@@ -6,6 +6,22 @@ import AuthButton from './AuthButton';
 import TurnstileBox from './TurnstileBox';
 import SecurityStatus from './SecurityStatus';
 
+
+function getAppNameFromUrl(urlStr) {
+  if (!urlStr) return 'AXiM Ecosystem';
+  try {
+    const url = new URL(urlStr);
+    switch (url.hostname) {
+      case 'nexus.axim.us.com': return 'Nexus CRM';
+      case 'echo.axim.us.com': return 'Echo Recovery';
+      case 'onyx.axim.us.com': return 'Onyx Portal';
+      default: return 'AXiM Ecosystem';
+    }
+  } catch (e) {
+    return 'AXiM Ecosystem';
+  }
+}
+
 const {
   FiGlobe,
   FiHexagon,
@@ -31,6 +47,7 @@ function PassportCard({
   onCancel,
 }) {
   const destination = redirectUrl ? new URL(redirectUrl).hostname : '';
+  const appName = getAppNameFromUrl(redirectUrl);
   const methodSelected = Boolean(selectedMethod);
   const walletFinalVerification = verificationStage === 'wallet-verify';
 
@@ -61,6 +78,10 @@ function PassportCard({
         seamlessly between every workspace.
       </p>
 
+      <div className="sub-headline" style={{ marginTop: '16px', marginBottom: '16px', fontSize: '14px', color: 'var(--lime)', fontWeight: '600' }}>
+        Sign in to continue to {appName}
+      </div>
+
       <div className="access-pill">
         <SafeIcon icon={FiGlobe} />
         <span>Internal access portal</span>
@@ -71,9 +92,9 @@ function PassportCard({
 
       {!redirectUrl && (
         redirectError === 'The requested application is not an approved AXiM destination.' ? (
-          <div className="error-message" role="alert" style={{ borderColor: 'red', color: 'red', marginBottom: '24px' }}>
+          <div className="error-message" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)', marginBottom: '24px' }}>
             <SafeIcon icon={FiAlertCircle} />
-            <span>Security Lockout: Unauthorized Application Callback</span>
+            <span style={{ fontWeight: 600 }}>SECURITY LOCKOUT: Unauthorized Application Callback</span>
           </div>
         ) : (
           <div className="configuration-warning" role="alert">
@@ -160,9 +181,9 @@ function PassportCard({
       </AnimatePresence>
 
       {error === 'SECURITY_LOCKOUT' ? (
-        <div className="error-message" role="alert" style={{ borderColor: 'red', color: 'red' }}>
+        <div className="error-message" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)' }}>
           <SafeIcon icon={FiAlertCircle} />
-          <span>Unauthorized Ecosystem Access - Incident Logged</span>
+          <span style={{ fontWeight: 600 }}>SECURITY LOCKOUT: Unauthorized Ecosystem Access - Incident Logged</span>
         </div>
       ) : error ? (
         <div className="error-message" role="alert">
