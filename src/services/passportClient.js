@@ -44,7 +44,9 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
           refresh_token: ''
         });
       }
-      window.history.replaceState({}, document.title, window.location.pathname);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('token');
+      window.history.replaceState({}, document.title, url.toString());
     }
 
     return data;

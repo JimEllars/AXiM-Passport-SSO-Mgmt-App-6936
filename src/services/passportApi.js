@@ -1,4 +1,4 @@
-const workerUrl = (import.meta.env.VITE_PASSPORT_WORKER_URL || '').replace(/\/$/, '');
+const workerUrl = (import.meta.env.VITE_PASSPORT_EDGE_URL || '').replace(/\/$/, '');
 const configuredOrigins = (import.meta.env.VITE_ALLOWED_REDIRECT_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim().replace(/\/$/, ''))
@@ -77,7 +77,7 @@ async function post(path, payload) {
   requireWorker();
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
 
   try {
     const response = await fetch(`${workerUrl}${path}`, {
@@ -232,3 +232,16 @@ export {
   getRedirectState,
   getRedirectUrl,
 };
+export async function checkWorkerHealth() {
+  if (!workerUrl) return false;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`${workerUrl}/api/v1/health`, { signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
