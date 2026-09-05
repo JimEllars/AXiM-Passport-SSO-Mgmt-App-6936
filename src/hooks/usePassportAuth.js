@@ -5,6 +5,7 @@ import {
   requestWalletChallenge,
   publishTelemetry,
   checkWorkerHealth,
+  logout as apiLogout,
 } from '../services/passportApi';
 import { createClient } from '@supabase/supabase-js';
 import { getWalletAccount, signWalletChallenge } from '../services/walletAuth';
@@ -166,6 +167,31 @@ function usePassportAuth(redirectUrl) {
     turnstileToken,
   ]);
 
+  const performLogout = useCallback(async () => {
+    setBusy(true);
+    // Grab any existing token from local storage or wherever the frontend stores it
+    const storedToken = localStorage.getItem('passport_token');
+    if (storedToken) {
+      await apiLogout(storedToken);
+      localStorage.removeItem('passport_token');
+    }
+
+    // Clear Supabase session if using direct Supabase as fallback
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+
+    setBusy(false);
+    setSelectedMethod('');
+    setVerificationStage('initial');
+    setPendingWallet(null);
+    setTurnstileToken('');
+    setError('');
+
+    // Redirect cleanly
+    window.location.href = '/';
+  }, []);
+
   const cancel = useCallback(() => {
     setSelectedMethod('');
     setVerificationStage('initial');
@@ -193,6 +219,7 @@ function usePassportAuth(redirectUrl) {
     startGoogle,
     startWallet,
     cancel,
+    logout: performLogout,
   };
 }
 

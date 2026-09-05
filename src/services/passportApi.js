@@ -245,3 +245,16 @@ export async function checkWorkerHealth() {
     window.clearTimeout(timeout);
   }
 }
+
+export async function logout(token) {
+  if (!workerUrl) return;
+  try {
+    await fetch(workerUrl + '/api/v1/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+  } catch (e) {
+    // ignore
+  }
+}
