@@ -320,6 +320,12 @@ async function mintHandoffToken(subject: string, redirectUrl: string, env: Env):
   return signJwt({ sub: subject, aud: redirectUrl, iat: now, exp: now + 60, jti: crypto.randomUUID() }, env.JWT_SECRET);
 }
 
+
+async function mintSessionToken(subject: string, env: Env): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return signJwt({ sub: subject, iat: now, exp: now + 604800, jti: crypto.randomUUID() }, env.JWT_SECRET);
+}
+
 async function codeChallenge(verifier: string): Promise<string> {
   return base64UrlEncode(await crypto.subtle.digest('SHA-256', encoder.encode(verifier)));
 }
@@ -445,10 +451,14 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
     return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
 
-  const token = await mintHandoffToken(uuid, redirectUrl, env);
+    const token = await mintHandoffToken(uuid, redirectUrl, env);
   log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
   ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { address, chainId }));
-  return json(request, env, { token });
+
+  const sessionToken = await mintSessionToken(uuid, env);
+  const res = json(request, env, { token });
+  res.headers.append('Set-Cookie', `axim_session=${sessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
+  return res;
 }
 
 async function consumeTokenEndpoint(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
@@ -607,6 +617,107 @@ async function logoutEndpoint(request: Request, env: Env, body: Record<string, u
   });
 }
 
+
+async function handleSessionEndpoint(request: Request, env: Env): Promise<Response> {
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/axim_session=([^;]+)/);
+  if (!match) return json(request, env, { authenticated: false });
+
+  const token = match[1];
+  const payload = await verifyJwt(token, env.JWT_SECRET);
+  if (!payload || typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) {
+    return json(request, env, { authenticated: false });
+  }
+  if (payload.jti) {
+    const revoked = await env.REVOCATION_KV.get(`revoked:${payload.jti}`);
+    if (revoked) return json(request, env, { authenticated: false });
+  }
+
+  const sub = payload.sub as string;
+  let role = 'authenticated';
+  let department = undefined, wallet_address = undefined, email = undefined;
+  try {
+    const sbRes = await fetch(env.SUPABASE_URL + '/rest/v1/team_profiles?id=eq.' + sub + '&select=role,department,wallet_address,email', {
+      headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY }
+    });
+    if (sbRes.ok) {
+      const data = await sbRes.json();
+      if (data && data.length > 0) {
+        role = data[0].role || 'authenticated';
+        department = data[0].department;
+        wallet_address = data[0].wallet_address;
+        email = data[0].email;
+      }
+    }
+  } catch(e) {}
+  return json(request, env, { authenticated: true, user: { id: sub, email, wallet_address, role, department } });
+}
+
+async function verifyTokenEndpoint(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
+  const { token } = body;
+  if (typeof token !== 'string') return json(request, env, { valid: false, error: 'Invalid request' }, 400);
+  const payload = await verifyJwt(token, env.JWT_SECRET);
+  if (!payload) return json(request, env, { valid: false, error: 'Invalid token' }, 403);
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || payload.exp < now) return json(request, env, { valid: false, error: 'Token expired' }, 403);
+  if (!payload.jti || typeof payload.jti !== 'string') return json(request, env, { valid: false, error: 'Invalid token' }, 403);
+  const revoked = await env.REVOCATION_KV.get(`revoked:${payload.jti}`);
+  if (revoked) return json(request, env, { valid: false, error: 'Token already used or revoked' }, 403);
+  await env.REVOCATION_KV.put(`revoked:${payload.jti}`, '1', { expirationTtl: 120 });
+  const sub = payload.sub as string;
+  let role = 'authenticated', department = undefined, wallet_address = undefined, email = undefined;
+  try {
+    const sbRes = await fetch(env.SUPABASE_URL + '/rest/v1/team_profiles?id=eq.' + sub + '&select=role,department,wallet_address,email', {
+      headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY }
+    });
+    if (sbRes.ok) {
+      const data = await sbRes.json() as any[];
+      if (data && data.length > 0) {
+        role = data[0].role || 'authenticated';
+        department = data[0].department;
+        wallet_address = data[0].wallet_address;
+        email = data[0].email;
+      }
+    }
+  } catch(e) {}
+  return json(request, env, { valid: true, user: { id: sub, email, wallet_address, role, department } });
+}
+
+async function linkWalletEndpoint(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
+  const { credential } = body;
+  if (typeof credential !== 'object' || credential === null) return json(request, env, { error: 'Invalid link request' }, 400);
+  const { address, chainId, message, nonce, signature } = credential as Record<string, unknown>;
+  if (typeof address !== 'string' || !ETHEREUM_ADDRESS.test(address) || typeof signature !== 'string' || !HEX_SIGNATURE.test(signature) || typeof message !== 'string' || typeof nonce !== 'string' || chainId !== Number(env.WALLET_CHAIN_ID)) return json(request, env, { error: 'Invalid link request' }, 400);
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/axim_session=([^;]+)/);
+  const sessionToken = match ? match[1] : (body.sessionToken as string);
+  if (!sessionToken) return json(request, env, { error: 'Unauthenticated' }, 401);
+  const payload = await verifyJwt(sessionToken, env.JWT_SECRET);
+  if (!payload || typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) return json(request, env, { error: 'Unauthenticated' }, 401);
+  const sub = payload.sub as string;
+  const state = await stateRequest(env, 'consume', `wallet:${nonce}`);
+  if (!state || state.address !== address.toLowerCase() || state.chainId !== chainId) return json(request, env, { error: 'Link request expired or invalid' }, 400);
+  const valid = await verifyMessage({ address: address as `0x${string}`, message: message as string, signature: signature as `0x${string}` });
+  if (!valid || !(message as string).includes(nonce as string)) return json(request, env, { error: 'Signature could not be verified' }, 401);
+  try {
+    await fetch(env.SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + sub, {
+      method: 'PATCH',
+      headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      body: JSON.stringify({ wallet_address: address.toLowerCase() })
+    });
+    await fetch(env.SUPABASE_URL + '/rest/v1/team_profiles?id=eq.' + sub, {
+      method: 'PATCH',
+      headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet_address: address.toLowerCase() })
+    });
+  } catch(e) { return json(request, env, { error: 'Failed to update profile' }, 500); }
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'wallet.linked', { address, sub }));
+  const newSessionToken = await mintSessionToken(sub, env);
+  const res = json(request, env, { success: true });
+  res.headers.append('Set-Cookie', `axim_session=${newSessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
+  return res;
+}
+
 async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
   const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
   if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
@@ -676,11 +787,15 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
     return json(request, env, { error: 'Forbidden' }, 403);
   }
 
-  const handoff = new URL(approvedRedir);
+    const handoff = new URL(approvedRedir);
   handoff.searchParams.set('token', await mintHandoffToken(result.user.id, approvedRedir, env));
   log('google_authenticated');
   ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: (result.user as any)?.email, userId: result.user.id }));
-  return Response.redirect(handoff.toString(), 302);
+
+  const sessionToken = await mintSessionToken(result.user.id, env);
+  const res = Response.redirect(handoff.toString(), 302);
+  res.headers.append('Set-Cookie', `axim_session=${sessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
+  return res;
 }
 
 
@@ -744,7 +859,9 @@ async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionCont
     ctx.waitUntil(dispatchTelemetryUplink(env, eventName, telemetryBody.timestamp as string, payload));
   }
 
-  return json(request, env, { success: true });
+  const res = json(request, env, { success: true });
+  res.headers.append('Set-Cookie', 'axim_session=; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0');
+  return res;
 }
 
 async function dispatchTelemetryUplink(env: Env, event: string, timestamp: string, payload: any) {
@@ -941,7 +1058,7 @@ export default {
 
 
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const rateLimitedPaths = ['/api/v1/auth/verify', '/api/v1/auth/wallet/challenge', '/api/v1/auth/token/consume', '/api/v1/auth/logout'];
+    const rateLimitedPaths = ['/api/v1/auth/verify', '/api/v1/auth/wallet/challenge', '/api/v1/auth/token/consume', '/api/v1/auth/logout', '/api/v1/auth/verify-token'];
     if (rateLimitedPaths.includes(url.pathname)) {
       if (!checkRateLimit(ip)) {
         log('rate_limit_exceeded', { ip, path: url.pathname });
@@ -968,7 +1085,7 @@ export default {
         if (!isFrontendOrigin && !isAllowedRedirectOrigin) return new Response('Forbidden', { status: 403 });
       } else {
         // Default for other POSTs like verify, wallet challenge, telemetry
-        if (!isFrontendOrigin) return new Response('Forbidden', { status: 403 });
+        if (!isFrontendOrigin && url.pathname !== '/api/v1/auth/verify-token') return new Response('Forbidden', { status: 403 });
       }
 
       const body = await parseJson(request);
@@ -976,10 +1093,13 @@ export default {
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, ctx, body);
+      if (url.pathname === '/api/v1/auth/verify-token') return verifyTokenEndpoint(request, env, ctx, body);
+      if (url.pathname === '/api/v1/auth/link-wallet') return linkWalletEndpoint(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body, ctx);
       if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, ctx, body);
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/session') return handleSessionEndpoint(request, env);
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(request, env, ctx, url);
     return new Response('Not found', { status: 404 });

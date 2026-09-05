@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import {
   authenticate,
   getGoogleAuthUrl,
@@ -191,6 +191,38 @@ function usePassportAuth(redirectUrl) {
     // Redirect cleanly
     window.location.href = '/';
   }, []);
+
+
+  const startWalletLink = useCallback(async () => {
+    try {
+      setError(null);
+      setBusy(true);
+      setSelectedMethod('link-wallet');
+      const account = await getWalletAccount();
+      const challengeReq = await fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/wallet/challenge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: account.address, chainId: account.chainId, redirect: redirectUrl }),
+      });
+      if (!challengeReq.ok) throw new Error('Could not request linking challenge. Ensure you have an active session.');
+      const challengeData = await challengeReq.json();
+      const signed = await signWalletChallenge({ provider: account.provider, address: account.address, message: challengeData.message });
+      const linkReq = await fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/link-wallet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: { ...signed, chainId: account.chainId, nonce: challengeData.nonce } }),
+        credentials: 'include'
+      });
+      if (!linkReq.ok) throw new Error('Could not link wallet.');
+      setBusy(false);
+      setSelectedMethod(null);
+      window.location.reload();
+    } catch (e) {
+      setBusy(false);
+      setSelectedMethod(null);
+      setError(e.message || 'An error occurred while linking wallet.');
+    }
+  }, [redirectUrl]);
 
   const cancel = useCallback(() => {
     setSelectedMethod('');
