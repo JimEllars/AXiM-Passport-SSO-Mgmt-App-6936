@@ -32,6 +32,11 @@
   },
   "kv_namespaces": [
     {
+      "binding": "REVOCATION_KV",
+      "id": "REVOCATION_KV",
+      "preview_id": "REVOCATION_KV_PREVIEW"
+    },
+    {
       "binding": "SECURITY_AUDIT_LOGS",
       "id": "SECURITY_AUDIT_LOGS",
       "preview_id": "SECURITY_AUDIT_LOGS_PREVIEW"
@@ -44,7 +49,7 @@
     }
   ],
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": ["0 11 * * *"]
   },
   "observability": {
     "enabled": true,

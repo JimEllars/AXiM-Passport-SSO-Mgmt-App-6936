@@ -24,6 +24,7 @@ export interface Env {
   TURNSTILE_SECRET_KEY: string;
   WALLET_CHAIN_ID: string;
   SECURITY_AUDIT_LOGS: KVNamespace;
+  REVOCATION_KV: KVNamespace;
 }
 
 interface AuthRecord {
@@ -485,6 +486,12 @@ async function consumeTokenEndpoint(request: Request, env: Env, ctx: ExecutionCo
     return json(request, env, { error: 'Invalid token' }, 403);
   }
 
+  const revoked = await env.REVOCATION_KV.get(`revoked:${payload.jti}`);
+  if (revoked) {
+    log('token_replay_rejected', { jti: payload.jti, reason: 'revoked' });
+    return json(request, env, { error: 'Token revoked' }, 403);
+  }
+
   const success = await stateRequest(env, 'consumeToken', `jti:${payload.jti}`);
   if (!success) {
     log('token_replay_rejected', { jti: payload.jti });
@@ -495,11 +502,40 @@ async function consumeTokenEndpoint(request: Request, env: Env, ctx: ExecutionCo
   await env.SECURITY_AUDIT_LOGS.put(`alert:${new Date().toISOString()}:token_consumed`, JSON.stringify({ event: 'token_consumed', timestamp: new Date().toISOString() }), { expirationTtl: 30 * 24 * 60 * 60 });
   ctx.waitUntil(dispatchCoreTelemetry(env, 'token.exchanged', { jti: payload.jti, origin, sub: payload.sub }));
 
+  // Fetch user claims from Supabase public.team_profiles
+  let role = 'authenticated';
+  let department = undefined;
+  let wallet_address = undefined;
+  let email = undefined;
+
+  try {
+    const sbRes = await fetch(env.SUPABASE_URL + '/rest/v1/team_profiles?id=eq.' + payload.sub + '&select=role,department,wallet_address,email', {
+      headers: {
+        'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY
+      }
+    });
+    if (sbRes.ok) {
+      const data = await sbRes.json() as any[];
+      if (data && data.length > 0) {
+        role = data[0].role || 'authenticated';
+        department = data[0].department;
+        wallet_address = data[0].wallet_address;
+        email = data[0].email;
+      }
+    }
+  } catch(e) {
+    // ignore
+  }
+
   // Mint new Supabase JWT
   const supabaseTokenPayload = {
     aud: 'authenticated',
-    role: 'authenticated',
+    role,
     sub: payload.sub as string,
+    email,
+    wallet_address,
+    department,
     exp: now + 3600 // 1 hour from now
   };
   const supabase_access_token = await signJwt(supabaseTokenPayload, env.SUPABASE_JWT_SECRET);
@@ -510,7 +546,17 @@ async function consumeTokenEndpoint(request: Request, env: Env, ctx: ExecutionCo
 }
 
 
-async function logoutEndpoint(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+async function logoutEndpoint(request: Request, env: Env, body: Record<string, unknown>, ctx?: ExecutionContext): Promise<Response> {
+  if (ctx) {
+    ctx.waitUntil(fetch(env.AXIM_CORE_API_URL + '/api/v1/auth/broadcast-revocation', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + env.AXIM_INTERNAL_KEY
+      },
+      body: JSON.stringify({ sub: body.sub || '' })
+    }).catch(() => {}));
+  }
   const { token } = body;
 
   if (typeof token !== 'string') {
@@ -531,9 +577,34 @@ async function logoutEndpoint(request: Request, env: Env, body: Record<string, u
     return new Response('Forbidden', { status: 403 });
   }
 
+  // Add token JTI to REVOCATION_KV with TTL matching remaining lifetime
+  if (payload.jti) {
+    const now = Math.floor(Date.now() / 1000);
+    const exp = typeof payload.exp === 'number' ? payload.exp : now + 3600;
+    const ttl = Math.max(60, exp - now);
+    await env.REVOCATION_KV.put(`revoked:${payload.jti}`, '1', { expirationTtl: ttl });
+  }
+
   await stateRequest(env, 'logout', payload.sub);
+
+  // Dispatch async revocation broadcast to AXiM Core
+  const coreUrl = env.AXIM_CORE_API_URL + '/api/v1/auth/broadcast-revocation';
+  request.headers.get('ExecutionContext'); // dummy
+
+  // Actually, we use ctx.waitUntil for background tasks, but we don't have ctx here.
+  // Wait, let's see if ctx is passed to logoutEndpoint.
+  // In handleFetch: if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body, ctx);
+  // Let's modify handleFetch to pass ctx to logoutEndpoint!
+  // BUT to avoid complex regex, we can just fetch without awaiting if it's safe, OR we can modify handleFetch.
+  // Let's modify handleFetch below and add ctx to logoutEndpoint signature.
+
   log('global_logout', { sub: payload.sub });
-  return json(request, env, { success: true });
+  return new Response(JSON.stringify({ success: true, message: 'Global session terminated' }), {
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'Set-Cookie': 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
+    }
+  });
 }
 
 async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
@@ -705,13 +776,16 @@ async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext
 
 export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const checkSupabase = async () => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+    const runCron = async () => {
+      // 1. Supabase Check
+      const controllerAbort = new AbortController();
+      const timeout = setTimeout(() => controllerAbort.abort(), 5000);
+      let isSupabaseDown = false;
+      let errMessage = '';
       try {
         const res = await fetch(env.SUPABASE_URL + '/rest/v1/', {
           headers: { apikey: env.SUPABASE_ANON_KEY },
-          signal: controller.signal as any
+          signal: controllerAbort.signal as any
         });
         clearTimeout(timeout);
         if (!res.ok) {
@@ -719,16 +793,87 @@ export default {
         }
       } catch (err: any) {
         clearTimeout(timeout);
-        const emailManager = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+        isSupabaseDown = true;
+        errMessage = err.message;
+      }
+
+      // Compile metrics for daily summary
+      let totalLogins = 0;
+      let web3Logins = 0;
+      let emailLogins = 0;
+      let googleLogins = 0;
+      let activeSessions = 0;
+      let botChallenges = 0;
+      let tokenRejections = 0;
+
+      // Query SECURITY_AUDIT_LOGS for last 24h
+      try {
+        const list = await env.SECURITY_AUDIT_LOGS.list({ prefix: 'alert:' });
+        const now = Date.now();
+        const oneDayMs = 24 * 60 * 60 * 1000;
+
+        for (const key of list.keys) {
+          const val = await env.SECURITY_AUDIT_LOGS.get(key.name, 'json') as any;
+          if (val && val.timestamp) {
+            const time = new Date(val.timestamp).getTime();
+            if (now - time <= oneDayMs) {
+               if (val.event === 'auth.success') {
+                 totalLogins++;
+                 if (val.payload?.method === 'wallet') web3Logins++;
+                 else if (val.payload?.method === 'email') emailLogins++;
+                 else if (val.payload?.method === 'google' || !val.payload?.method) googleLogins++;
+               }
+               if (val.event === 'token_consumed') activeSessions++;
+               if (val.event === 'turnstile.blocked' || val.event === 'auth.blocked') botChallenges++;
+               if (val.event === 'token_replay_rejected') tokenRejections++;
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      const emailManager = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+
+      if (isSupabaseDown) {
         await emailManager.send({
           from: "System Alerts <alerts@axim.us.com>",
           to: env.ADMIN_ALERT_EMAIL,
           subject: "System Degraded: Supabase Unreachable",
-          html: `<p>Active monitoring failed to reach Supabase API.</p><p>Error: ${err.message}</p>`,
+          html: `<p>Active monitoring failed to reach Supabase API.</p><p>Error: ${errMessage}</p>`,
         });
       }
+
+      // Dispatch Daily Report
+      const htmlReport = `
+        <div style="background-color: #0f172a; color: #f8fafc; font-family: sans-serif; padding: 20px;">
+          <h2 style="color: #38bdf8;">AXiM Passport SSO - Daily Security Report</h2>
+          <hr style="border: 1px solid #1e293b;" />
+          <p>Here is the identity and auth security summary for the last 24 hours:</p>
+          <ul>
+            <li><strong>Total Logins:</strong> ${totalLogins}</li>
+            <ul>
+               <li>Web3 SIWE: ${web3Logins}</li>
+               <li>Email OTP: ${emailLogins}</li>
+               <li>Google: ${googleLogins}</li>
+            </ul>
+            <li><strong>Active/Concurrent Sessions (Tokens Consumed):</strong> ${activeSessions}</li>
+            <li><strong>Bot Challenges Mitigated (Turnstile):</strong> ${botChallenges}</li>
+            <li><strong>Replayed/Expired Token Rejections:</strong> ${tokenRejections}</li>
+          </ul>
+        </div>
+      `;
+
+      await emailManager.send({
+        from: "System Alerts <alerts@axim.us.com>",
+        to: "james.ellars@axim.us.com",
+        bcc: "jrellars@gmail.com",
+        subject: `[AXiM Passport SSO] Daily Identity & Auth Security Report - ${new Date().toISOString().split('T')[0]}`,
+        html: htmlReport,
+      });
+
     };
-    ctx.waitUntil(checkSupabase());
+    ctx.waitUntil(runCron());
   },
 
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -831,7 +976,7 @@ export default {
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body);
+      if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body, ctx);
       if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, ctx, body);
     }
 

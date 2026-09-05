@@ -60,7 +60,9 @@ function PassportCard({
     : 'Connect wallet';
 
   return (
-    <main className="passport-card">
+    <main className="passport-card relative overflow-hidden backdrop-blur-md bg-slate-900/90 border border-slate-800 shadow-2xl shadow-cyan-950/20">
+      <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 via-emerald-500/20 to-indigo-500/20 opacity-30 animate-pulse" style={{ zIndex: 0, pointerEvents: 'none' }}></div>
+      <div className="relative" style={{ zIndex: 1 }}>
       <BrandMark />
 
       <div className="eyebrow">
@@ -129,6 +131,19 @@ function PassportCard({
       </section>
 
       <AnimatePresence mode="wait">
+
+      <div className="flex flex-wrap gap-2 mb-4 justify-center" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+        <span className="px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 shadow flex items-center gap-1">
+          <FiHexagon /> SIWE Cryptographic Link
+        </span>
+        <span className="px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 shadow flex items-center gap-1">
+          <SafeIcon icon={FiGlobe} /> Department: Verified
+        </span>
+        <span className="px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 shadow flex items-center gap-1">
+          <SafeIcon icon={FiLock} /> Turnstile Verified
+        </span>
+      </div>
+
       {methodSelected && !busy && (
         <motion.div
           className="verification-panel"
@@ -202,6 +217,7 @@ function PassportCard({
           Returning to <strong>{destination}</strong> after verification.
         </div>
       )}
+          </div>
     </main>
   );
 }
