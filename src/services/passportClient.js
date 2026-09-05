@@ -205,3 +205,25 @@ export async function validateSession(supabaseClient) {
     return false;
   }
 }
+
+
+/**
+ * Standalone client SDK helper to perform silent session checks.
+ *
+ * @param {Object} params - The parameters.
+ * @param {Function} params.onAuthenticated - Callback fired when a valid session is found. Receives the user object.
+ * @param {Function} [params.onUnauthenticated] - Callback fired when no valid session is found.
+ */
+export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
+  try {
+    const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include' });
+    const data = await res.json();
+    if (data.authenticated) {
+      onAuthenticated(data.user);
+    } else {
+      if (onUnauthenticated) onUnauthenticated();
+    }
+  } catch (e) {
+    if (onUnauthenticated) onUnauthenticated();
+  }
+}

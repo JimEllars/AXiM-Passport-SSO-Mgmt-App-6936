@@ -45,6 +45,9 @@ function PassportCard({
   onGoogle,
   onWallet,
   onCancel,
+  onLinkWallet,
+  isEmailAuthenticated,
+  isWalletLinked,
 }) {
   const destination = redirectUrl ? new URL(redirectUrl).hostname : '';
   const appName = getAppNameFromUrl(redirectUrl);
@@ -130,6 +133,26 @@ function PassportCard({
         </AuthButton>
       </section>
 
+
+      {isEmailAuthenticated && !isWalletLinked && !redirectUrl && (
+        <section className="auth-options" style={{ marginTop: '20px' }} aria-label="Link Web3 Wallet">
+          <div className="configuration-warning" role="alert" style={{ marginBottom: '12px' }}>
+            <SafeIcon icon={FiAlertCircle} />
+            <span>Protect your account. Link a Web3 wallet.</span>
+          </div>
+          <AuthButton
+            icon={FiHexagon}
+            onClick={onLinkWallet}
+            disabled={busy}
+            isLoading={selectedMethod === 'link-wallet' && busy}
+            secondary
+          >
+            {selectedMethod === 'link-wallet' && busy
+              ? 'Linking wallet...'
+              : 'Link Web3 Wallet'}
+          </AuthButton>
+        </section>
+      )}
       <AnimatePresence mode="wait">
 
       <div className="flex flex-wrap gap-2 mb-4 justify-center" style={{ fontSize: '11px', fontWeight: 'bold' }}>

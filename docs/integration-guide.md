@@ -102,3 +102,23 @@ const handleAuthHandoff = async () => {
 3. User logs in to AXiM Passport.
 4. User is redirected back to `YOUR_URL?token=YOUR_TOKEN`.
 5. Your app uses `@axim/passport-sdk` to consume the token, hydrating your local Supabase session and cleaning the URL.
+
+
+## Phase 7: Standalone Client SDK Helper
+
+You can now use the `initAximPassport` helper to perform a silent session check for cross-subdomain auto-login:
+
+```javascript
+import { initAximPassport } from '@axim/passport-sdk';
+
+initAximPassport({
+  onAuthenticated: (user) => {
+    console.log("User is authenticated!", user);
+    // user.id, user.email, user.wallet_address, user.role, user.department
+  },
+  onUnauthenticated: () => {
+    console.log("No active Passport session. Redirecting to login...");
+    // Redirect to passport.axim.us.com
+  }
+});
+```
