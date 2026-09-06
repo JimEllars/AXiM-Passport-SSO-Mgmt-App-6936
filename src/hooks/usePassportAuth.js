@@ -2,6 +2,9 @@ import { useCallback, useState, useEffect } from 'react';
 import {
   authenticate,
   getGoogleAuthUrl,
+  getAppleAuthUrl,
+  startEmailOtp,
+  verifyEmailOtp,
   requestWalletChallenge,
   publishTelemetry,
   checkWorkerHealth,
@@ -15,7 +18,30 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 function usePassportAuth(redirectUrl) {
-  const [selectedMethod, setSelectedMethod] = useState('');
+
+  const [session, setSession] = useState(null);
+  const [identities, setIdentities] = useState([]);
+
+  useEffect(() => {
+    // Fetch session on load
+    fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+         if (data.authenticated) {
+           setSession(data.user);
+           return fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/identities`, { credentials: 'include' });
+         }
+      })
+      .then(res => res?.json())
+      .then(data => {
+         if (data?.identities) {
+           setIdentities(data.identities);
+         }
+      })
+      .catch(() => {});
+  }, []);
+
+const [selectedMethod, setSelectedMethod] = useState('');
   const [verificationStage, setVerificationStage] = useState('initial');
   const [pendingWallet, setPendingWallet] = useState(null);
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -98,7 +124,80 @@ function usePassportAuth(redirectUrl) {
     }
   }, [ensureReady, fail, redirectUrl, selectMethod, turnstileToken]);
 
-  const startWallet = useCallback(async () => {
+
+  const startApple = useCallback(async () => {
+    if (busy) return;
+    if (!selectMethod('apple')) {
+      return;
+    }
+
+    try {
+      ensureReady();
+      setBusy(true);
+
+      const isHealthy = await checkWorkerHealth();
+      if (!isHealthy && supabase) {
+        setError('Standard gateway unreachable, utilizing direct secure connection...');
+        await supabase.auth.signInWithOAuth({ provider: 'apple', options: { redirectTo: redirectUrl } });
+        return;
+      }
+
+      window.location.assign(getAppleAuthUrl(redirectUrl, turnstileToken));
+    } catch (authenticationError) {
+      if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
+        publishTelemetry('unauthorized_access', { method: 'apple' });
+        fail('SECURITY_LOCKOUT');
+      } else if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
+        fail('Authentication was cancelled. Please try again.');
+      } else {
+        fail(authenticationError.message || 'Apple authentication failed.');
+      }
+    }
+  }, [ensureReady, fail, redirectUrl, selectMethod, turnstileToken]);
+
+
+  const [emailState, setEmailState] = useState(null);
+
+  const startEmail = useCallback(async (email) => {
+    if (busy) return;
+
+    if (verificationStage === 'email-verify') {
+      try {
+        setBusy(true);
+        const res = await verifyEmailOtp(emailState.email, turnstileToken, emailState.nonce);
+        if (res.token) {
+          const url = new URL(redirectUrl);
+          url.searchParams.set('token', res.token);
+          window.location.assign(url.toString());
+        }
+      } catch (err) {
+        fail(err.message || 'OTP verification failed');
+      }
+      return;
+    }
+
+    if (!selectMethod('email')) return;
+
+    if (!email) {
+      fail('Please provide an email address.');
+      return;
+    }
+
+    try {
+      ensureReady();
+      setBusy(true);
+
+      const res = await startEmailOtp(email, redirectUrl, turnstileToken);
+      setEmailState({ email, nonce: res.nonce });
+      setVerificationStage('email-verify');
+      setBusy(false);
+      resetVerification();
+    } catch (error) {
+       fail(error.message || 'Failed to send OTP.');
+    }
+  }, [busy, verificationStage, selectMethod, ensureReady, turnstileToken, redirectUrl, emailState, resetVerification, fail]);
+
+const startWallet = useCallback(async () => {
     if (busy) return;
     if (!selectMethod('wallet')) {
       return;
@@ -185,6 +284,7 @@ function usePassportAuth(redirectUrl) {
     setSelectedMethod('');
     setVerificationStage('initial');
     setPendingWallet(null);
+    setEmailState(null);
     setTurnstileToken('');
     setError('');
 
@@ -228,6 +328,7 @@ function usePassportAuth(redirectUrl) {
     setSelectedMethod('');
     setVerificationStage('initial');
     setPendingWallet(null);
+    setEmailState(null);
     setTurnstileToken('');
     setError('');
     setBusy(false);
@@ -249,6 +350,10 @@ function usePassportAuth(redirectUrl) {
     setTurnstileToken,
     handleTurnstileError,
     startGoogle,
+    startApple,
+    startEmail,
+    session,
+    identities,
     startWallet,
     cancel,
     logout: performLogout,
