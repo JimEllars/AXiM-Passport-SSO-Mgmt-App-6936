@@ -1,5 +1,5 @@
 {
-  "name": "@axim/passport-sdk",
+  "name": "axim-passport",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -12,7 +12,6 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@axim/passport-sdk": "github:jimellars/axim-passport-sso-mgmt-app-6936#main",
     "@questlabs/react-sdk": "^2.2.92",
     "@supabase/supabase-js": "^2.39.0",
     "date-fns": "4.1.0",

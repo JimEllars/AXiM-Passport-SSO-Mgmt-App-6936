@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { extractHandoffToken, consumeTokenAndCleanUrl, buildPassportRedirectUrl } from '@axim/passport-sdk';
+import { extractHandoffToken, consumeTokenAndCleanUrl, buildPassportRedirectUrl } from '../services/passportClient';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';

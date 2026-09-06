@@ -44,8 +44,11 @@ function App() {
         setTurnstileToken={auth.setTurnstileToken}
         onVerificationError={auth.handleTurnstileError}
         onGoogle={auth.startGoogle}
+        onApple={auth.startApple}
+        onEmail={auth.startEmail}
         onWallet={auth.startWallet}
         onLinkWallet={auth.startWalletLink}
+        identities={auth.identities}
         isEmailAuthenticated={!!auth.session && !auth.session.wallet_address}
         isWalletLinked={!!auth.session && !!auth.session.wallet_address}
         onCancel={auth.cancel}

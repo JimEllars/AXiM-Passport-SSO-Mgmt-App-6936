@@ -31,6 +31,7 @@ interface AuthRecord {
   address?: string;
   chainId?: number;
   codeVerifier?: string;
+  email?: string;
   expiresAt: number;
   redirectUrl?: string;
 }
@@ -321,9 +322,9 @@ async function mintHandoffToken(subject: string, redirectUrl: string, env: Env):
 }
 
 
-async function mintSessionToken(subject: string, env: Env): Promise<string> {
+async function mintSessionToken(subject: string, env: Env, existingJti?: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  return signJwt({ sub: subject, iat: now, exp: now + 604800, jti: crypto.randomUUID() }, env.JWT_SECRET);
+  return signJwt({ sub: subject, iat: now, exp: now + 604800, jti: existingJti || crypto.randomUUID(), last_active_timestamp: now }, env.JWT_SECRET);
 }
 
 async function codeChallenge(verifier: string): Promise<string> {
@@ -356,45 +357,65 @@ async function startWalletChallenge(request: Request, env: Env, body: Record<str
   return json(request, env, { nonce, message });
 }
 
-async function resolveUniversalId(address: string, env: Env): Promise<string> {
+async function resolveUniversalId(identifier: string, env: Env, provider: string, providerUid: string): Promise<string> {
   const adminHeaders = {
     'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
     'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
     'Content-Type': 'application/json'
   };
 
-  const email = `${address.toLowerCase()}@wallet.local`;
+  const email = provider === 'wallet' ? `${identifier.toLowerCase()}@wallet.local` : identifier.toLowerCase();
 
   const searchUrl = new URL('/auth/v1/admin/users', env.SUPABASE_URL);
   const searchRes = await fetch(searchUrl.toString(), {
     headers: adminHeaders
   });
 
+  let userId = '';
   if (searchRes.ok) {
     const data = await searchRes.json() as any;
     const existingUser = data.users?.find((u: any) => u.email === email);
     if (existingUser) {
-      return existingUser.id;
+      userId = existingUser.id;
     }
   }
 
-  const createUrl = new URL('/auth/v1/admin/users', env.SUPABASE_URL);
-  const createRes = await fetch(createUrl.toString(), {
-    method: 'POST',
-    headers: adminHeaders,
-    body: JSON.stringify({
-      email,
-      email_confirm: true,
-      user_metadata: { address: address.toLowerCase() }
-    })
-  });
+  if (!userId) {
+    const createUrl = new URL('/auth/v1/admin/users', env.SUPABASE_URL);
+    const createRes = await fetch(createUrl.toString(), {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        email,
+        email_confirm: true,
+        user_metadata: provider === 'wallet' ? { address: identifier.toLowerCase() } : {}
+      })
+    });
 
-  if (createRes.ok) {
-    const data = await createRes.json() as any;
-    return data.id || data.user?.id;
+    if (createRes.ok) {
+      const data = await createRes.json() as any;
+      userId = data.id || data.user?.id;
+    }
   }
 
-  throw new Error('Failed to resolve universal ID for wallet address');
+  if (!userId) throw new Error('Failed to resolve universal ID');
+
+  const payload = {
+    user_id: userId,
+    provider: provider,
+    provider_uid: providerUid,
+    email: provider === 'wallet' ? null : identifier.toLowerCase(),
+    wallet_address: provider === 'wallet' ? identifier.toLowerCase() : null,
+    linked_at: new Date().toISOString()
+  };
+
+  await fetch(new URL('/rest/v1/user_identities', env.SUPABASE_URL).toString(), {
+    method: 'POST',
+    headers: { ...adminHeaders, 'Prefer': 'resolution=merge-duplicates' },
+    body: JSON.stringify(payload)
+  });
+
+  return userId;
 }
 
 async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
@@ -446,7 +467,7 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
 
   let uuid;
   try {
-    uuid = await resolveUniversalId(address as string, env);
+    uuid = await resolveUniversalId(address as string, env, "wallet", address as string);
   } catch (error) {
     return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
@@ -609,10 +630,20 @@ async function logoutEndpoint(request: Request, env: Env, body: Record<string, u
   // Let's modify handleFetch below and add ctx to logoutEndpoint signature.
 
   log('global_logout', { sub: payload.sub });
+
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/axim_session=([^;]+)/);
+  if (match) {
+    const sessionPayload = await verifyJwt(match[1], env.JWT_SECRET);
+    if (sessionPayload?.jti) {
+      await env.REVOCATION_KV.put(`revoked:${sessionPayload.jti}`, 'true', { expirationTtl: 604800 });
+    }
+  }
+
   return new Response(JSON.stringify({ success: true, message: 'Global session terminated' }), {
     headers: {
       'Content-Type': 'application/json; charset=UTF-8',
-      'Set-Cookie': 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
+      'Set-Cookie': 'axim_session=; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0'
     }
   });
 }
@@ -641,7 +672,7 @@ async function handleSessionEndpoint(request: Request, env: Env): Promise<Respon
       headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY }
     });
     if (sbRes.ok) {
-      const data = await sbRes.json();
+      const data = await sbRes.json() as any[];
       if (data && data.length > 0) {
         role = data[0].role || 'authenticated';
         department = data[0].department;
@@ -787,12 +818,19 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
     return json(request, env, { error: 'Forbidden' }, 403);
   }
 
-    const handoff = new URL(approvedRedir);
-  handoff.searchParams.set('token', await mintHandoffToken(result.user.id, approvedRedir, env));
-  log('google_authenticated');
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: (result.user as any)?.email, userId: result.user.id }));
+    let uuid;
+  try {
+    uuid = await resolveUniversalId(userEmail, env, 'google', result.user.id);
+  } catch (error) {
+    return new Response('Authentication could not be verified', { status: 401 });
+  }
 
-  const sessionToken = await mintSessionToken(result.user.id, env);
+  const handoff = new URL(approvedRedir);
+  handoff.searchParams.set('token', await mintHandoffToken(uuid, approvedRedir, env));
+  log('google_authenticated');
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: userEmail, userId: uuid }));
+
+  const sessionToken = await mintSessionToken(uuid, env);
   const res = Response.redirect(handoff.toString(), 302);
   res.headers.append('Set-Cookie', `axim_session=${sessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
   return res;
@@ -800,6 +838,361 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
 
 
 
+
+async function startApple(request: Request, env: Env, url: URL): Promise<Response> {
+  const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
+  if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
+    return new Response('Authentication could not be verified', { status: 403 });
+  }
+
+  const state = crypto.randomUUID();
+  const verifier = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+  await stateRequest(env, 'put', `apple:${state}`, {
+    codeVerifier: verifier,
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    redirectUrl,
+  });
+
+  const callback = new URL('/api/v1/auth/apple/callback', env.PASSPORT_ORIGIN);
+  callback.searchParams.set('state', state);
+  const authorize = new URL('/auth/v1/authorize', env.SUPABASE_URL);
+  authorize.searchParams.set('provider', 'apple');
+  authorize.searchParams.set('redirect_to', callback.toString());
+  authorize.searchParams.set('code_challenge', await codeChallenge(verifier));
+  authorize.searchParams.set('code_challenge_method', 's256');
+  return Response.redirect(authorize.toString(), 302);
+}
+
+async function finishApple(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
+  const code = url.searchParams.get('code');
+  const stateKey = url.searchParams.get('state');
+  if (!code || !stateKey) return new Response('Authentication could not be verified', { status: 403 });
+
+  const state = await stateRequest(env, 'consume', `apple:${stateKey}`);
+  if (!state?.codeVerifier || !state.redirectUrl) return new Response('Authentication could not be verified', { status: 403 });
+
+  const response = await fetch(new URL('/auth/v1/token?grant_type=pkce', env.SUPABASE_URL), {
+    method: 'POST',
+    headers: { ...JSON_HEADERS, apikey: env.SUPABASE_ANON_KEY },
+    body: JSON.stringify({ auth_code: code, code_verifier: state.codeVerifier }),
+  });
+  if (!response.ok) {
+    await sendUnauthorizedAlert(env, ctx, 'Unknown Apple User', 'Apple SSO');
+    return new Response('Authentication could not be verified', { status: 403 });
+  }
+
+  const result = await response.json<{ user?: { id?: string } }>();
+  if (!result.user?.id) {
+    const identifier = (result.user as any)?.email || result.user?.id || 'Unknown Apple User';
+    await sendUnauthorizedAlert(env, ctx, identifier, 'Apple SSO');
+    return new Response('Authentication could not be verified', { status: 403 });
+  }
+
+  const userEmail = (result.user as any)?.email;
+  if (!userEmail || (!AUTHORIZED_IDENTITIES.includes(userEmail.toLowerCase()) && !AUTHORIZED_IDENTITIES.includes(userEmail))) {
+    const emailManager = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+    ctx.waitUntil(emailManager.send({
+      from: "System Alerts <alerts@axim.us.com>",
+      to: env.ADMIN_ALERT_EMAIL,
+      subject: "Unauthorized Access Attempt Blocked",
+      html: `<p>Blocked Apple login attempt for email: ${userEmail || 'Unknown'}</p>`,
+    }).catch(console.error));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }));
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  const approvedRedir = approvedRedirect(env, state.redirectUrl);
+  if (!approvedRedir) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  let uuid;
+  try {
+    uuid = await resolveUniversalId(userEmail, env, 'apple', result.user.id);
+  } catch (error) {
+    return new Response('Authentication could not be verified', { status: 401 });
+  }
+
+  const handoff = new URL(approvedRedir);
+  handoff.searchParams.set('token', await mintHandoffToken(uuid, approvedRedir, env));
+  log('apple_authenticated');
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: userEmail, userId: uuid }));
+
+  const sessionToken = await mintSessionToken(uuid, env);
+  const res = Response.redirect(handoff.toString(), 302);
+  res.headers.append('Set-Cookie', `axim_session=${sessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
+  return res;
+}
+
+async function startEmailOtp(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+  const { email, redirect, turnstileToken } = body;
+  const redirectUrl = approvedRedirect(env, redirect);
+
+  if (!redirectUrl || typeof email !== 'string') {
+    return json(request, env, { error: 'Invalid authentication request' }, 400);
+  }
+  if (!await verifyTurnstile(turnstileToken, request, env)) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+  }
+
+  const response = await fetch(new URL('/auth/v1/otp', env.SUPABASE_URL), {
+    method: 'POST',
+    headers: { ...JSON_HEADERS, apikey: env.SUPABASE_ANON_KEY },
+    body: JSON.stringify({ email, create_user: true }),
+  });
+
+  if (!response.ok) {
+    return json(request, env, { error: 'Failed to send OTP' }, 400);
+  }
+
+  const nonce = crypto.randomUUID().replace(/-/g, '');
+  await stateRequest(env, 'put', `email:${nonce}`, {
+    email: email.toLowerCase(),
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    redirectUrl,
+  });
+
+  return json(request, env, { nonce });
+}
+
+async function verifyEmailOtp(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
+  const { nonce, email, token } = body;
+  if (typeof nonce !== 'string' || typeof email !== 'string' || typeof token !== 'string') {
+    return json(request, env, { error: 'Invalid request' }, 400);
+  }
+
+  const state = await stateRequest(env, 'consume', `email:${nonce}`);
+  if (!state || state.email !== email.toLowerCase() || !state.redirectUrl) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 401);
+  }
+
+  if (!AUTHORIZED_IDENTITIES.includes(email.toLowerCase()) && !AUTHORIZED_IDENTITIES.includes(email)) {
+    const emailManager = new EmailDispatchManager(env.EMAILIT_API_KEY, env.RESEND_API_KEY);
+    ctx.waitUntil(emailManager.send({
+      from: "System Alerts <alerts@axim.us.com>",
+      to: env.ADMIN_ALERT_EMAIL,
+      subject: "Unauthorized Access Attempt Blocked",
+      html: `<p>Blocked Email OTP login attempt for email: ${email}</p>`,
+    }).catch(console.error));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email, reason: 'unauthorized_identity' }));
+    return json(request, env, { error: 'Forbidden' }, 403);
+  }
+
+  const response = await fetch(new URL('/auth/v1/verify', env.SUPABASE_URL), {
+    method: 'POST',
+    headers: { ...JSON_HEADERS, apikey: env.SUPABASE_ANON_KEY },
+    body: JSON.stringify({ type: 'magiclink', email, token }),
+  });
+
+  if (!response.ok) {
+    await sendUnauthorizedAlert(env, ctx, email, 'Email OTP');
+    return json(request, env, { error: 'Authentication could not be verified' }, 401);
+  }
+
+  const result = await response.json<{ user?: { id?: string } }>();
+  if (!result.user?.id) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 401);
+  }
+
+  let uuid;
+  try {
+    uuid = await resolveUniversalId(email, env, 'email', result.user.id);
+  } catch (error) {
+    return json(request, env, { error: 'Authentication could not be verified' }, 401);
+  }
+
+  const handoffToken = await mintHandoffToken(uuid, state.redirectUrl, env);
+  log('email_authenticated');
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email, userId: uuid }));
+
+  const sessionToken = await mintSessionToken(uuid, env);
+  const res = json(request, env, { token: handoffToken });
+  res.headers.append('Set-Cookie', `axim_session=${sessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
+  return res;
+}
+
+async function linkProviderEndpoint(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
+  const { provider, payload } = body;
+
+  if (typeof provider !== 'string' || typeof payload !== 'object' || payload === null) {
+    return json(request, env, { error: 'Invalid link request' }, 400);
+  }
+
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/axim_session=([^;]+)/);
+  const sessionToken = match ? match[1] : (body.sessionToken as string);
+
+  if (!sessionToken) return json(request, env, { error: 'Unauthenticated' }, 401);
+  const jwtPayload = await verifyJwt(sessionToken, env.JWT_SECRET);
+  if (!jwtPayload || typeof jwtPayload.exp !== 'number' || jwtPayload.exp < Math.floor(Date.now() / 1000)) return json(request, env, { error: 'Unauthenticated' }, 401);
+
+  const sub = jwtPayload.sub as string;
+  let providerUid = '';
+  let email = null;
+  let wallet_address = null;
+
+  if (provider === 'wallet') {
+    const { address, chainId, message, nonce, signature } = payload as Record<string, unknown>;
+    const state = await stateRequest(env, 'consume', `wallet:${nonce}`);
+    if (!state || state.address !== (address as string).toLowerCase() || state.chainId !== chainId) return json(request, env, { error: 'Link request expired or invalid' }, 400);
+    const valid = await verifyMessage({ address: address as `0x${string}`, message: message as string, signature: signature as `0x${string}` });
+    if (!valid || !(message as string).includes(nonce as string)) return json(request, env, { error: 'Signature could not be verified' }, 401);
+
+    providerUid = address as string;
+    wallet_address = (address as string).toLowerCase();
+
+  } else if (provider === 'google' || provider === 'apple') {
+    const { code, stateKey } = payload as Record<string, unknown>;
+    const state = await stateRequest(env, 'consume', `${provider}:${stateKey}`);
+    if (!state?.codeVerifier) return json(request, env, { error: 'Authentication could not be verified' }, 401);
+
+    const response = await fetch(new URL('/auth/v1/token?grant_type=pkce', env.SUPABASE_URL), {
+      method: 'POST',
+      headers: { ...JSON_HEADERS, apikey: env.SUPABASE_ANON_KEY },
+      body: JSON.stringify({ auth_code: code, code_verifier: state.codeVerifier }),
+    });
+
+    if (!response.ok) return json(request, env, { error: 'Provider authentication failed' }, 401);
+
+    const result = await response.json<{ user?: { id?: string, email?: string } }>();
+    if (!result.user?.id) return json(request, env, { error: 'Provider authentication failed' }, 401);
+
+    providerUid = result.user.id;
+    email = result.user.email || null;
+
+  } else if (provider === 'email') {
+    const { email: providedEmail, token, nonce } = payload as Record<string, unknown>;
+    const state = await stateRequest(env, 'consume', `email:${nonce}`);
+    if (!state || state.email !== (providedEmail as string).toLowerCase()) return json(request, env, { error: 'Authentication could not be verified' }, 401);
+
+    const response = await fetch(new URL('/auth/v1/verify', env.SUPABASE_URL), {
+      method: 'POST',
+      headers: { ...JSON_HEADERS, apikey: env.SUPABASE_ANON_KEY },
+      body: JSON.stringify({ type: 'magiclink', email: providedEmail, token }),
+    });
+
+    if (!response.ok) return json(request, env, { error: 'OTP verification failed' }, 401);
+
+    const result = await response.json<{ user?: { id?: string, email?: string } }>();
+    if (!result.user?.id) return json(request, env, { error: 'OTP verification failed' }, 401);
+
+    providerUid = result.user.id;
+    email = result.user.email || null;
+  } else {
+    return json(request, env, { error: 'Unsupported provider' }, 400);
+  }
+
+  const adminHeaders = {
+    'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
+    'Content-Type': 'application/json'
+  };
+
+  const identityPayload = {
+    user_id: sub,
+    provider: provider,
+    provider_uid: providerUid,
+    email: email,
+    wallet_address: wallet_address,
+    linked_at: new Date().toISOString()
+  };
+
+  await fetch(new URL('/rest/v1/user_identities', env.SUPABASE_URL).toString(), {
+    method: 'POST',
+    headers: { ...adminHeaders, 'Prefer': 'resolution=merge-duplicates' },
+    body: JSON.stringify(identityPayload)
+  });
+
+  if (wallet_address) {
+    try {
+      await fetch(env.SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + sub, {
+        method: 'PATCH',
+        headers: adminHeaders,
+        body: JSON.stringify({ wallet_address })
+      });
+    } catch (e) {}
+  }
+
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'provider.linked', { provider, sub }));
+  const newSessionToken = await mintSessionToken(sub, env);
+  const res = json(request, env, { success: true });
+  res.headers.append('Set-Cookie', `axim_session=${newSessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
+  return res;
+}
+
+async function unlinkProviderEndpoint(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+  const { provider, providerUid } = body;
+
+  if (typeof provider !== 'string' || typeof providerUid !== 'string') {
+    return json(request, env, { error: 'Invalid unlink request' }, 400);
+  }
+
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/axim_session=([^;]+)/);
+  const sessionToken = match ? match[1] : (body.sessionToken as string);
+
+  if (!sessionToken) return json(request, env, { error: 'Unauthenticated' }, 401);
+  const jwtPayload = await verifyJwt(sessionToken, env.JWT_SECRET);
+  if (!jwtPayload || typeof jwtPayload.exp !== 'number' || jwtPayload.exp < Math.floor(Date.now() / 1000)) return json(request, env, { error: 'Unauthenticated' }, 401);
+  const sub = jwtPayload.sub as string;
+
+  const adminHeaders = {
+    'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
+    'Content-Type': 'application/json'
+  };
+
+  const getRes = await fetch(new URL(`/rest/v1/user_identities?user_id=eq.${sub}&select=id`, env.SUPABASE_URL).toString(), {
+    headers: adminHeaders
+  });
+
+  if (getRes.ok) {
+    const data = await getRes.json() as any[];
+    if (data.length <= 1) {
+      return json(request, env, { error: 'Cannot unlink primary identity' }, 400);
+    }
+  }
+
+  await fetch(new URL(`/rest/v1/user_identities?user_id=eq.${sub}&provider=eq.${provider}&provider_uid=eq.${providerUid}`, env.SUPABASE_URL).toString(), {
+    method: 'DELETE',
+    headers: adminHeaders
+  });
+
+  return json(request, env, { success: true });
+}
+
+async function listIdentitiesEndpoint(request: Request, env: Env): Promise<Response> {
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/axim_session=([^;]+)/);
+  if (!match) return json(request, env, { error: 'Unauthenticated' }, 401);
+
+  const jwtPayload = await verifyJwt(match[1], env.JWT_SECRET);
+  if (!jwtPayload || typeof jwtPayload.exp !== 'number' || jwtPayload.exp < Math.floor(Date.now() / 1000)) return json(request, env, { error: 'Unauthenticated' }, 401);
+  const sub = jwtPayload.sub as string;
+
+  const adminHeaders = {
+    'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
+    'Content-Type': 'application/json'
+  };
+
+  const getRes = await fetch(new URL(`/rest/v1/user_identities?user_id=eq.${sub}`, env.SUPABASE_URL).toString(), {
+    headers: adminHeaders
+  });
+
+  let identities: any[] = [];
+  if (getRes.ok) {
+    const data = await getRes.json() as any[];
+    identities = data.map(id => ({
+      provider: id.provider,
+      identifier: id.email || id.wallet_address || id.provider_uid,
+      isPrimary: false
+    }));
+    if (identities.length > 0) identities[0].isPrimary = true;
+  }
+
+  return json(request, env, { userId: sub, identities });
+}
 async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const rawBody = await request.text();
   const signatureHeader = request.headers.get('X-Emailit-Signature');
@@ -1097,11 +1490,18 @@ export default {
       if (url.pathname === '/api/v1/auth/link-wallet') return linkWalletEndpoint(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body, ctx);
       if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, ctx, body);
+      if (url.pathname === '/api/v1/auth/email/start') return startEmailOtp(request, env, body);
+      if (url.pathname === '/api/v1/auth/email/verify') return verifyEmailOtp(request, env, ctx, body);
+      if (url.pathname === '/api/v1/auth/link-provider') return linkProviderEndpoint(request, env, ctx, body);
+      if (url.pathname === '/api/v1/auth/unlink-provider') return unlinkProviderEndpoint(request, env, body);
     }
 
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/session') return handleSessionEndpoint(request, env);
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/identities') return listIdentitiesEndpoint(request, env);
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(request, env, ctx, url);
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple') return startApple(request, env, url);
+    if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple/callback') return finishApple(request, env, ctx, url);
     return new Response('Not found', { status: 404 });
   },
 };

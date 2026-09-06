@@ -5,7 +5,7 @@ import BrandMark from './BrandMark';
 import AuthButton from './AuthButton';
 import TurnstileBox from './TurnstileBox';
 import SecurityStatus from './SecurityStatus';
-
+import { useState } from 'react';
 
 function getAppNameFromUrl(urlStr) {
   if (!urlStr) return 'AXiM Ecosystem';
@@ -29,6 +29,9 @@ const {
   FiLock,
   FiX,
   FiAlertCircle,
+  FiSmartphone,
+  FiCheckCircle,
+  FiPlusCircle
 } = FiIcons;
 
 function PassportCard({
@@ -43,9 +46,12 @@ function PassportCard({
   setTurnstileToken,
   onVerificationError,
   onGoogle,
+  onApple,
+  onEmail,
   onWallet,
   onCancel,
   onLinkWallet,
+  identities = [],
   isEmailAuthenticated,
   isWalletLinked,
 }) {
@@ -53,14 +59,83 @@ function PassportCard({
   const appName = getAppNameFromUrl(redirectUrl);
   const methodSelected = Boolean(selectedMethod);
   const walletFinalVerification = verificationStage === 'wallet-verify';
+  const emailFinalVerification = verificationStage === 'email-verify';
+
+  const [emailInput, setEmailInput] = useState('');
 
   const verificationCopy = walletFinalVerification
     ? 'Complete the final verification to securely verify your wallet signature.'
+    : emailFinalVerification
+    ? 'Enter the 6-digit code sent to your email.'
     : 'Complete the managed verification before continuing.';
 
   const walletLabel = walletFinalVerification
     ? 'Verify wallet signature'
-    : 'Connect wallet';
+    : 'Connect Web3 Wallet';
+
+  const renderIdentities = () => {
+    if (!identities || identities.length === 0) return null;
+
+    const emailIdentity = identities.find(i => i.provider === 'email' || i.provider === 'google' || i.provider === 'apple');
+    const walletIdentity = identities.find(i => i.provider === 'wallet');
+    const googleIdentity = identities.find(i => i.provider === 'google');
+    const appleIdentity = identities.find(i => i.provider === 'apple');
+
+    return (
+      <div className="mt-6 border-t border-slate-700/50 pt-4">
+        <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">Connected Accounts</h3>
+        <div className="space-y-2">
+          {emailIdentity ? (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
+              <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiMail} /> {emailIdentity.identifier}</span>
+              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Verified</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onEmail}>
+              <span className="flex items-center gap-2 text-slate-400"><SafeIcon icon={FiMail} /> Connect Email</span>
+              <span className="text-slate-500 flex items-center gap-1 text-xs"><SafeIcon icon={FiPlusCircle} /> Link</span>
+            </div>
+          )}
+
+          {walletIdentity ? (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
+              <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiHexagon} /> {walletIdentity.identifier.slice(0,6)}...{walletIdentity.identifier.slice(-4)}</span>
+              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Linked</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onLinkWallet}>
+              <span className="flex items-center gap-2 text-slate-400"><SafeIcon icon={FiHexagon} /> Connect Web3 Wallet</span>
+              <span className="text-slate-500 flex items-center gap-1 text-xs"><SafeIcon icon={FiPlusCircle} /> Link</span>
+            </div>
+          )}
+
+          {googleIdentity ? (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
+              <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiGlobe} /> Google Account</span>
+              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Connected</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onGoogle}>
+              <span className="flex items-center gap-2 text-slate-400"><SafeIcon icon={FiGlobe} /> Connect Google</span>
+              <span className="text-slate-500 flex items-center gap-1 text-xs"><SafeIcon icon={FiPlusCircle} /> Link</span>
+            </div>
+          )}
+
+          {appleIdentity ? (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
+              <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiSmartphone} /> Apple Account</span>
+              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Connected</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onApple}>
+              <span className="flex items-center gap-2 text-slate-400"><SafeIcon icon={FiSmartphone} /> Connect Apple</span>
+              <span className="text-slate-500 flex items-center gap-1 text-xs"><SafeIcon icon={FiPlusCircle} /> Link</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <main className="passport-card relative overflow-hidden backdrop-blur-md bg-slate-900/90 border border-slate-800 shadow-2xl shadow-cyan-950/20">
@@ -109,53 +184,43 @@ function PassportCard({
         )
       )}
 
+      {identities && identities.length > 0 ? renderIdentities() : (
       <section className="auth-options" aria-label="Authentication options">
-        <AuthButton icon={FiMail} onClick={onGoogle} disabled={busy || !redirectUrl} isLoading={selectedMethod === 'google' && busy}>
-          {selectedMethod === 'google' && busy
-            ? 'Opening Google…'
-            : 'Continue with Google'}
-        </AuthButton>
-
-        <div className="or-divider">
-          <span>OR CONNECT</span>
-        </div>
-
         <AuthButton
           icon={FiHexagon}
           onClick={onWallet}
           disabled={busy || !redirectUrl}
           isLoading={selectedMethod === 'wallet' && busy}
-          secondary
         >
           {selectedMethod === 'wallet' && busy
             ? 'Verifying wallet…'
             : walletLabel}
         </AuthButton>
+
+        <AuthButton icon={FiMail} onClick={() => onEmail(emailInput)} disabled={busy || !redirectUrl} isLoading={selectedMethod === 'email' && busy} secondary>
+          {selectedMethod === 'email' && busy
+            ? 'Sending OTP...'
+            : 'Continue with Email'}
+        </AuthButton>
+
+        <AuthButton icon={FiGlobe} onClick={onGoogle} disabled={busy || !redirectUrl} isLoading={selectedMethod === 'google' && busy} secondary>
+          {selectedMethod === 'google' && busy
+            ? 'Opening Google…'
+            : 'Continue with Google'}
+        </AuthButton>
+
+        <AuthButton icon={FiSmartphone} onClick={onApple} disabled={busy || !redirectUrl} isLoading={selectedMethod === 'apple' && busy} secondary>
+          {selectedMethod === 'apple' && busy
+            ? 'Opening Apple…'
+            : 'Continue with Apple'}
+        </AuthButton>
       </section>
-
-
-      {isEmailAuthenticated && !isWalletLinked && !redirectUrl && (
-        <section className="auth-options" style={{ marginTop: '20px' }} aria-label="Link Web3 Wallet">
-          <div className="configuration-warning" role="alert" style={{ marginBottom: '12px' }}>
-            <SafeIcon icon={FiAlertCircle} />
-            <span>Protect your account. Link a Web3 wallet.</span>
-          </div>
-          <AuthButton
-            icon={FiHexagon}
-            onClick={onLinkWallet}
-            disabled={busy}
-            isLoading={selectedMethod === 'link-wallet' && busy}
-            secondary
-          >
-            {selectedMethod === 'link-wallet' && busy
-              ? 'Linking wallet...'
-              : 'Link Web3 Wallet'}
-          </AuthButton>
-        </section>
       )}
+
+
       <AnimatePresence mode="wait">
 
-      <div className="flex flex-wrap gap-2 mb-4 justify-center" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+      <div className="flex flex-wrap gap-2 mt-4 mb-4 justify-center" style={{ fontSize: '11px', fontWeight: 'bold' }}>
         <span className="px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 shadow flex items-center gap-1">
           <FiHexagon /> SIWE Cryptographic Link
         </span>
@@ -177,7 +242,7 @@ function PassportCard({
         >
           <div className="verification-heading">
             <span>
-              {walletFinalVerification ? 'FINAL SECURITY CHECK' : 'SECURITY CHECK'}
+              {walletFinalVerification || emailFinalVerification ? 'FINAL SECURITY CHECK' : 'SECURITY CHECK'}
             </span>
             <button
               type="button"
@@ -189,6 +254,18 @@ function PassportCard({
           </div>
 
           <p>{verificationCopy}</p>
+
+          {selectedMethod === 'email' && !emailFinalVerification && (
+             <div className="mb-4">
+                <input
+                  type="email"
+                  placeholder="name@axim.us.com"
+                  className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                />
+             </div>
+          )}
 
           <TurnstileBox
             resetKey={resetKey}

@@ -258,3 +258,36 @@ export async function logout(token) {
     // ignore
   }
 }
+
+
+export function getAppleAuthUrl(redirectUrl, turnstileToken) {
+  assertApprovedRedirect(redirectUrl);
+  requireWorker();
+  requireTurnstile();
+
+  if (!turnstileToken) {
+    throw new Error('Complete the security verification before continuing.');
+  }
+
+  publishTelemetry('apple_auth_initiated', { redirect: redirectUrl });
+
+  const url = new URL(`${workerUrl}/api/v1/auth/apple`);
+  url.searchParams.set('redirect', redirectUrl);
+  url.searchParams.set('turnstile_token', turnstileToken);
+
+  return url.toString();
+}
+
+
+export async function startEmailOtp(email, redirectUrl, turnstileToken) {
+  requireTurnstile();
+  assertApprovedRedirect(redirectUrl);
+  publishTelemetry('email_otp_initiated', { email, redirect: redirectUrl });
+  const result = await post('/api/v1/auth/email/start', { email, redirect: redirectUrl, turnstileToken });
+  return result;
+}
+
+export async function verifyEmailOtp(email, token, nonce) {
+  const result = await post('/api/v1/auth/email/verify', { email, token, nonce });
+  return result;
+}
