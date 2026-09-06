@@ -101,7 +101,12 @@ async function post(path, payload) {
       throw new Error('Passport is temporarily unavailable.');
     }
 
-    return await response.json();
+    const data = await response.json();
+    const traceId = response.headers.get('x-axim-trace-id');
+    if (traceId) {
+      data.traceId = traceId;
+    }
+    return data;
   } catch (error) {
     if (error.name === 'AbortError') {
       throw new Error('The Passport Worker took too long to respond.');
@@ -135,11 +140,15 @@ export function publishTelemetry(event, payload = {}) {
     delete safePayload.turnstileToken;
     delete safePayload.credential;
 
+    const traceId = safePayload.traceId || window.sessionStorage.getItem('axim_trace_id') || crypto.randomUUID();
+    window.sessionStorage.setItem('axim_trace_id', traceId);
+
     // We intentionally don't await this as telemetry should be non-blocking
     fetch(`${workerUrl}/api/v1/telemetry`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-axim-trace-id': traceId,
       },
       body: JSON.stringify({
         event,

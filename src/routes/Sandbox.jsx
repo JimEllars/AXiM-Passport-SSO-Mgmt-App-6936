@@ -14,6 +14,31 @@ function Sandbox() {
   const [authState, setAuthState] = useState('Checking');
   const [sessionInfo, setSessionInfo] = useState(null);
   const [showLegacyLogin, setShowLegacyLogin] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [logs, setLogs] = useState([]);
+
+  useEffect(() => {
+    const handleStorage = () => {
+      const trace = window.sessionStorage.getItem('axim_trace_id');
+      if (trace && !logs.includes(trace)) {
+        setLogs(prev => [...prev.slice(-4), trace]);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    // Poll for changes since sessionStorage doesn't always fire events on same tab
+    const iv = setInterval(() => {
+       const trace = window.sessionStorage.getItem('axim_trace_id');
+       setLogs(prev => {
+         if (trace && !prev.includes(trace)) return [...prev.slice(-4), trace];
+         return prev;
+       });
+    }, 1000);
+    return () => {
+       window.removeEventListener('storage', handleStorage);
+       clearInterval(iv);
+    };
+  }, []);
+
 
   useEffect(() => {
     let isMounted = true;
@@ -171,6 +196,45 @@ function Sandbox() {
           <pre>{JSON.stringify(result, null, 2)}</pre>
         </div>
       )}
+      {/* Live Telemetry & Diagnostics Drawer */}
+      <div
+        style={{
+          position: 'fixed', right: drawerOpen ? '0' : '-350px', top: 0, bottom: 0, width: '350px',
+          backgroundColor: '#0f172a', borderLeft: '1px solid #1e293b', padding: '1rem',
+          transition: 'right 0.3s ease', zIndex: 9999, overflowY: 'auto'
+        }}
+      >
+        <button
+          onClick={() => setDrawerOpen(!drawerOpen)}
+          style={{
+            position: 'absolute', left: '-40px', top: '20px', width: '40px', height: '40px',
+            backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRight: 'none',
+            color: '#38bdf8', cursor: 'pointer', borderRadius: '4px 0 0 4px'
+          }}
+        >
+          {drawerOpen ? '>' : '<'}
+        </button>
+
+        <h3 style={{ color: '#38bdf8', borderBottom: '1px solid #1e293b', paddingBottom: '0.5rem', marginTop: 0 }}>
+          Live Telemetry & Diagnostics
+        </h3>
+
+        <div style={{ marginTop: '1rem' }}>
+          <strong style={{ color: '#94a3b8' }}>Recent Trace IDs:</strong>
+          {logs.length === 0 ? <p style={{ color: '#475569', fontSize: '12px' }}>No traces yet...</p> :
+            <ul style={{ paddingLeft: '1rem', color: '#cbd5e1', fontSize: '12px' }}>
+              {logs.map((log, i) => <li key={i}>{log}</li>)}
+            </ul>
+          }
+        </div>
+
+        <div style={{ marginTop: '1rem' }}>
+          <strong style={{ color: '#94a3b8' }}>Parsed Session JWT Claims:</strong>
+          <pre style={{ backgroundColor: '#1e293b', padding: '10px', borderRadius: '4px', fontSize: '11px', color: '#cbd5e1', overflowX: 'auto' }}>
+            {sessionInfo ? JSON.stringify(sessionInfo, null, 2) : 'No active session.'}
+          </pre>
+        </div>
+      </div>
     </div>
   );
 }

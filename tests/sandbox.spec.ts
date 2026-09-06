@@ -52,7 +52,7 @@ test('Sandbox Token Consumption Loop', async ({ page }) => {
   await expect(page.locator('text="Verified: True"')).toBeVisible();
 
   // Checking that the JSON stringified result contains usr_mock123
-  await expect(page.locator('pre')).toContainText('usr_mock123');
+  await expect(page.locator('pre').first()).toContainText('usr_mock123');
 
   // Checking that the Supabase auth state changes to Authenticated.
   const authState = page.locator('span', { hasText: 'Authenticated' }).first();

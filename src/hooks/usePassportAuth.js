@@ -25,9 +25,13 @@ function usePassportAuth(redirectUrl) {
   useEffect(() => {
     // Fetch session on load
     fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
-      .then(res => res.json())
+      .then(res => {
+         if (!res.ok) throw new Error('Worker unreachable');
+         return res.json();
+      })
       .then(data => {
          if (data.authenticated) {
+           localStorage.setItem('optimistic_session', JSON.stringify(data.user));
            setSession(data.user);
            return fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/identities`, { credentials: 'include' });
          }
@@ -38,7 +42,39 @@ function usePassportAuth(redirectUrl) {
            setIdentities(data.identities);
          }
       })
-      .catch(() => {});
+      .catch(() => {
+         // Optimistic session recovery
+         const cached = localStorage.getItem('optimistic_session');
+         if (cached) {
+           try {
+             setSession(JSON.parse(cached));
+             // Schedule background retry with exponential backoff
+             let attempt = 0;
+             const retry = () => {
+               attempt++;
+               const backoff = Math.min(1000 * Math.pow(2, attempt), 30000);
+               setTimeout(() => {
+                 fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
+                   .then(res => {
+                     if (res.ok) return res.json();
+                     throw new Error('Still unreachable');
+                   })
+                   .then(data => {
+                     if (data.authenticated) {
+                        setSession(data.user);
+                        localStorage.setItem('optimistic_session', JSON.stringify(data.user));
+                     } else {
+                        setSession(null);
+                        localStorage.removeItem('optimistic_session');
+                     }
+                   })
+                   .catch(retry);
+               }, backoff);
+             };
+             retry();
+           } catch(e){ /* ignore */ }
+         }
+      });
   }, []);
 
 const [selectedMethod, setSelectedMethod] = useState('');
@@ -86,12 +122,14 @@ const [selectedMethod, setSelectedMethod] = useState('');
     }
   }, [redirectUrl, turnstileToken]);
 
-  const fail = useCallback((message) => {
+  const fail = useCallback((message, transient = false) => {
     setBusy(false);
     setError(message);
-    setPendingWallet(null);
-    setVerificationStage('initial');
-    resetVerification();
+    if (!transient) {
+      setPendingWallet(null);
+      setVerificationStage('initial');
+      resetVerification();
+    }
   }, [resetVerification]);
 
   const startGoogle = useCallback(async () => {
@@ -117,7 +155,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
         publishTelemetry('unauthorized_access', { method: 'google' });
         fail('SECURITY_LOCKOUT');
       } else if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
-        fail('Authentication was cancelled. Please try again.');
+        fail('Authentication was cancelled. Please try again.', true);
       } else {
         fail(authenticationError.message || 'Google authentication failed.');
       }
@@ -164,7 +202,11 @@ const [selectedMethod, setSelectedMethod] = useState('');
     if (verificationStage === 'email-verify') {
       try {
         setBusy(true);
+        const startTime = Date.now();
         const res = await verifyEmailOtp(emailState.email, turnstileToken, emailState.nonce);
+        const latency = Date.now() - startTime;
+        if (res.traceId) window.sessionStorage.setItem('axim_trace_id', res.traceId);
+        publishTelemetry('turnstile_verified', { method: 'email', latency, traceId: res.traceId, sessionHash: 'anon' });
         if (res.token) {
           const url = new URL(redirectUrl);
           url.searchParams.set('token', res.token);
@@ -187,12 +229,17 @@ const [selectedMethod, setSelectedMethod] = useState('');
       ensureReady();
       setBusy(true);
 
+      const startTime = Date.now();
       const res = await startEmailOtp(email, redirectUrl, turnstileToken);
+      const latency = Date.now() - startTime;
+      if (res.traceId) window.sessionStorage.setItem('axim_trace_id', res.traceId);
+      publishTelemetry('auth_attempt', { method: 'email', latency, traceId: res.traceId, sessionHash: 'anon' });
       setEmailState({ email, nonce: res.nonce });
       setVerificationStage('email-verify');
       setBusy(false);
       resetVerification();
     } catch (error) {
+       publishTelemetry('auth_error', { method: 'email', error: error.message });
        fail(error.message || 'Failed to send OTP.');
     }
   }, [busy, verificationStage, selectMethod, ensureReady, turnstileToken, redirectUrl, emailState, resetVerification, fail]);
@@ -216,11 +263,15 @@ const startWallet = useCallback(async () => {
           redirectUrl,
         });
 
+        const startTime = Date.now();
         const signedChallenge = await signWalletChallenge({
           provider: wallet.provider,
           address: wallet.address,
           message: challenge.message,
         });
+        const latency = Date.now() - startTime;
+        if (challenge.traceId) window.sessionStorage.setItem('axim_trace_id', challenge.traceId);
+        publishTelemetry('wallet_signed', { address: wallet.address, latency, traceId: challenge.traceId, sessionHash: 'anon' });
 
         setPendingWallet({
           wallet,
@@ -251,7 +302,7 @@ const startWallet = useCallback(async () => {
         publishTelemetry('unauthorized_access', { method: 'wallet', address });
         fail('SECURITY_LOCKOUT');
       } else if (authenticationError.code === 4001 || (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel'))) {
-        fail('Wallet signature was cancelled. Please try again.');
+        fail('Wallet signature was cancelled. Please try again.', true);
       } else {
         fail(authenticationError.message || 'Wallet authentication failed.');
       }
