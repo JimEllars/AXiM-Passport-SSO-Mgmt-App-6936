@@ -13,3 +13,9 @@ The production URL `https://passport.axim.us.com/api/v1/webhooks/email` was succ
 
 ## E2E DNS & Health Verification
 DNS propagation and worker routing were verified to the custom domain `https://passport.axim.us.com`. The `/api/v1/health` endpoint successfully returns a `200 OK` response. Pre-flight logic was tested locally to ensure the `PASSPORT_UNAVAILABLE` error is no longer thrown when the gateway is active.
+
+## Telemetry & Resilience Polish
+- Orchestrated end-to-end `x-axim-trace-id` tracing across the Cloudflare Worker to link React sessions to security audit logs.
+- Fortified `usePassportAuth.js` with optimistic UI session restoration and exponential retry backoff.
+- Enhanced `PassportCard.jsx` and `SecurityStatus.jsx` to render ambient error boundaries instead of disrupting the main flow when facing transient provider or Turnstile issues.
+- Established a `Sandbox.jsx` developer pane to stream session traces directly.

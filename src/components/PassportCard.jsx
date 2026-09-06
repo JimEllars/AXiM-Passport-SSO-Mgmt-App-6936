@@ -168,7 +168,7 @@ function PassportCard({
         <b>PHASE 01</b>
       </div>
 
-      <SecurityStatus readiness={readiness} />
+      <SecurityStatus readiness={readiness} errorWarning={error} />
 
       {!redirectUrl && (
         redirectError === 'The requested application is not an approved AXiM destination.' ? (

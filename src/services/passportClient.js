@@ -36,6 +36,21 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
     }
 
     const data = await res.json();
+    const traceId = res.headers.get('x-axim-trace-id');
+    if (traceId) {
+       window.sessionStorage.setItem('axim_trace_id', traceId);
+    }
+
+    // In src/services/passportClient.js, we don't have access to publishTelemetry natively since it's in passportApi.js
+    // Wait, let's just do it directly with fetch or just log it. The prompt says "In src/services/passportClient.js and src/hooks/usePassportAuth.js, capture x-axim-trace-id on all responses. Dispatch structured client-side telemetry events"
+    if (traceId && workerUrl) {
+      fetch(`${workerUrl}/api/v1/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-axim-trace-id': traceId },
+        body: JSON.stringify({ event: 'session_restored', traceId, timestamp: new Date().toISOString(), sessionHash: 'anon' }),
+        keepalive: true
+      }).catch(()=>{});
+    }
 
     if (data.valid) {
       if (supabaseClient) {

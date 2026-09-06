@@ -451,7 +451,7 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
       subject: "Unauthorized Access Attempt Blocked",
       html: `<p>Blocked Web3 login attempt for address: ${address}</p>`,
     }).catch(console.error));
-    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { address, reason: 'unauthorized_identity' }));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { address, reason: 'unauthorized_identity' }, request.headers.get('x-axim-trace-id') || undefined));
     return json(request, env, { error: 'Forbidden' }, 403);
   }
 
@@ -474,7 +474,7 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
 
     const token = await mintHandoffToken(uuid, redirectUrl, env);
   log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { address, chainId }));
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { address, chainId }, request.headers.get('x-axim-trace-id') || undefined));
 
   const sessionToken = await mintSessionToken(uuid, env);
   const res = json(request, env, { token });
@@ -531,7 +531,7 @@ async function consumeTokenEndpoint(request: Request, env: Env, ctx: ExecutionCo
 
   log('token_consumed', { aud: typeof payload.aud === 'string' ? payload.aud : 'unknown', sub_prefix: typeof payload.sub === 'string' ? payload.sub.slice(0, 6) : 'unknow' });
   await env.SECURITY_AUDIT_LOGS.put(`alert:${new Date().toISOString()}:token_consumed`, JSON.stringify({ event: 'token_consumed', timestamp: new Date().toISOString() }), { expirationTtl: 30 * 24 * 60 * 60 });
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'token.exchanged', { jti: payload.jti, origin, sub: payload.sub }));
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'token.exchanged', { jti: payload.jti, origin, sub: payload.sub }, request.headers.get('x-axim-trace-id') || undefined));
 
   // Fetch user claims from Supabase public.team_profiles
   let role = 'authenticated';
@@ -742,7 +742,7 @@ async function linkWalletEndpoint(request: Request, env: Env, ctx: ExecutionCont
       body: JSON.stringify({ wallet_address: address.toLowerCase() })
     });
   } catch(e) { return json(request, env, { error: 'Failed to update profile' }, 500); }
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'wallet.linked', { address, sub }));
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'wallet.linked', { address, sub }, request.headers.get('x-axim-trace-id') || undefined));
   const newSessionToken = await mintSessionToken(sub, env);
   const res = json(request, env, { success: true });
   res.headers.append('Set-Cookie', `axim_session=${newSessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
@@ -809,7 +809,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
       subject: "Unauthorized Access Attempt Blocked",
       html: `<p>Blocked Google login attempt for email: ${userEmail || 'Unknown'}</p>`,
     }).catch(console.error));
-    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }, request.headers.get('x-axim-trace-id') || undefined));
     return new Response('Forbidden', { status: 403 });
   }
 
@@ -828,7 +828,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
   const handoff = new URL(approvedRedir);
   handoff.searchParams.set('token', await mintHandoffToken(uuid, approvedRedir, env));
   log('google_authenticated');
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: userEmail, userId: uuid }));
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: userEmail, userId: uuid }, request.headers.get('x-axim-trace-id') || undefined));
 
   const sessionToken = await mintSessionToken(uuid, env);
   const res = Response.redirect(handoff.toString(), 302);
@@ -897,7 +897,7 @@ async function finishApple(request: Request, env: Env, ctx: ExecutionContext, ur
       subject: "Unauthorized Access Attempt Blocked",
       html: `<p>Blocked Apple login attempt for email: ${userEmail || 'Unknown'}</p>`,
     }).catch(console.error));
-    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }, request.headers.get('x-axim-trace-id') || undefined));
     return new Response('Forbidden', { status: 403 });
   }
 
@@ -916,7 +916,7 @@ async function finishApple(request: Request, env: Env, ctx: ExecutionContext, ur
   const handoff = new URL(approvedRedir);
   handoff.searchParams.set('token', await mintHandoffToken(uuid, approvedRedir, env));
   log('apple_authenticated');
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: userEmail, userId: uuid }));
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email: userEmail, userId: uuid }, request.headers.get('x-axim-trace-id') || undefined));
 
   const sessionToken = await mintSessionToken(uuid, env);
   const res = Response.redirect(handoff.toString(), 302);
@@ -974,7 +974,7 @@ async function verifyEmailOtp(request: Request, env: Env, ctx: ExecutionContext,
       subject: "Unauthorized Access Attempt Blocked",
       html: `<p>Blocked Email OTP login attempt for email: ${email}</p>`,
     }).catch(console.error));
-    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email, reason: 'unauthorized_identity' }));
+    ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email, reason: 'unauthorized_identity' }, request.headers.get('x-axim-trace-id') || undefined));
     return json(request, env, { error: 'Forbidden' }, 403);
   }
 
@@ -1003,7 +1003,7 @@ async function verifyEmailOtp(request: Request, env: Env, ctx: ExecutionContext,
 
   const handoffToken = await mintHandoffToken(uuid, state.redirectUrl, env);
   log('email_authenticated');
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email, userId: uuid }));
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.success', { email, userId: uuid }, request.headers.get('x-axim-trace-id') || undefined));
 
   const sessionToken = await mintSessionToken(uuid, env);
   const res = json(request, env, { token: handoffToken });
@@ -1113,7 +1113,7 @@ async function linkProviderEndpoint(request: Request, env: Env, ctx: ExecutionCo
     } catch (e) {}
   }
 
-  ctx.waitUntil(dispatchCoreTelemetry(env, 'provider.linked', { provider, sub }));
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'provider.linked', { provider, sub }, request.headers.get('x-axim-trace-id') || undefined));
   const newSessionToken = await mintSessionToken(sub, env);
   const res = json(request, env, { success: true });
   res.headers.append('Set-Cookie', `axim_session=${newSessionToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800`);
@@ -1249,7 +1249,7 @@ async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionCont
   log('webhook_received', { event: eventName });
 
   if (eventName) {
-    ctx.waitUntil(dispatchTelemetryUplink(env, eventName, telemetryBody.timestamp as string, payload));
+    ctx.waitUntil(dispatchTelemetryUplink(env, eventName, telemetryBody.timestamp as string, payload, request.headers.get('x-axim-trace-id') || undefined));
   }
 
   const res = json(request, env, { success: true });
@@ -1257,11 +1257,11 @@ async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionCont
   return res;
 }
 
-async function dispatchTelemetryUplink(env: Env, event: string, timestamp: string, payload: any) {
+async function dispatchTelemetryUplink(env: Env, event: string, timestamp: string, payload: any, traceId?: string) {
   try {
     const identifier = payload.address || payload.method || event;
     const key = `alert:${timestamp || new Date().toISOString()}:${identifier}`;
-    await env.SECURITY_AUDIT_LOGS.put(key, JSON.stringify({ event, timestamp, payload }), { expirationTtl: 30 * 24 * 60 * 60 });
+    await env.SECURITY_AUDIT_LOGS.put(key, JSON.stringify({ event, timestamp, payload, trace_id: traceId }), { expirationTtl: 30 * 24 * 60 * 60 });
   } catch (error) {
     // fail-safe silent catch
   }
@@ -1275,10 +1275,13 @@ async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext
   delete payload.turnstileToken;
   delete payload.credential;
 
+  const traceId = request.headers.get('x-axim-trace-id') || undefined;
+
   if (typeof event === 'string') {
     log(event, payload as Record<string, string | number | boolean>);
 
-    ctx.waitUntil(dispatchTelemetryUplink(env, event, timestamp as string, payload));
+    ctx.waitUntil(dispatchTelemetryUplink(env, event, timestamp as string, payload, traceId));
+    ctx.waitUntil(dispatchCoreTelemetry(env, event, payload, traceId));
   }
 
   return json(request, env, { success: true });
@@ -1387,11 +1390,20 @@ export default {
   },
 
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const response = await this.handleFetch(request, env, ctx);
+    const traceId = request.headers.get('x-axim-trace-id') || crypto.randomUUID();
+    const req = new Request(request, {
+      headers: new Headers(request.headers)
+    });
+    req.headers.set('x-axim-trace-id', traceId);
+
+    const response = await this.handleFetch(req, env, ctx);
+
     const newHeaders = new Headers(response.headers);
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
       newHeaders.set(key, value);
     }
+    newHeaders.set('x-axim-trace-id', traceId);
+
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,

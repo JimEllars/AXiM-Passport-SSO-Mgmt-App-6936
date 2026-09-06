@@ -4,7 +4,7 @@
   "description": "Cloudflare Worker for AXiM Passport",
   "main": "src/index.ts",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc --noEmit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240821.1",
