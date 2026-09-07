@@ -19,3 +19,10 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Fortified `usePassportAuth.js` with optimistic UI session restoration and exponential retry backoff.
 - Enhanced `PassportCard.jsx` and `SecurityStatus.jsx` to render ambient error boundaries instead of disrupting the main flow when facing transient provider or Turnstile issues.
 - Established a `Sandbox.jsx` developer pane to stream session traces directly.
+
+### Sprint 2 (Updates)
+- Added telemetry logic for user actions (`AUTH_INITIATED`, `TURNSTILE_VERIFIED`, etc) across worker endpoints. Handled PII sanitization.
+- Integrated rate limiting headers `X-RateLimit-Limit` & `X-RateLimit-Remaining` to the SSO endpoint headers for cross-origin tracking.
+- Set `Cache-Control: no-store` on `/api/v1/auth/*` requests.
+- Added session resiliency using `window.addEventListener('online')` to auto-recover when connectivity is restored. Token refreshes proactively trigger before expiry.
+- Improved Turnstile interaction flow to timeout in 10s and offer "Retry Verification".

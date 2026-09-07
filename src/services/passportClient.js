@@ -274,12 +274,53 @@ export async function validateSession(supabaseClient) {
  * @param {Function} params.onAuthenticated - Callback fired when a valid session is found. Receives the user object.
  * @param {Function} [params.onUnauthenticated] - Callback fired when no valid session is found.
  */
+// Used to store the active refresh timeout
+let refreshTimeoutId = null;
+
 export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
+  const scheduleRefresh = (user) => {
+    // Determine expiration from user token, fallback to 1 hour
+    const tokenExp = user?.exp ? user.exp * 1000 : Date.now() + 60 * 60 * 1000;
+    const timeToRefresh = Math.max(0, tokenExp - Date.now() - 60000); // 60 seconds before expiry
+
+    if (refreshTimeoutId) {
+      clearTimeout(refreshTimeoutId);
+    }
+
+    refreshTimeoutId = setTimeout(async () => {
+      try {
+        const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include' });
+        const data = await res.json();
+        if (data.authenticated) {
+          onAuthenticated(data.user);
+          scheduleRefresh(data.user);
+        } else {
+          if (onUnauthenticated) onUnauthenticated();
+        }
+      } catch (e) {
+        // Queue state transition retry for when we come online
+        const onOnline = async () => {
+          window.removeEventListener('online', onOnline);
+          const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include' });
+          const data = await res.json();
+          if (data.authenticated) {
+            onAuthenticated(data.user);
+            scheduleRefresh(data.user);
+          } else {
+            if (onUnauthenticated) onUnauthenticated();
+          }
+        };
+        window.addEventListener('online', onOnline);
+      }
+    }, timeToRefresh);
+  };
+
   try {
     const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include' });
     const data = await res.json();
     if (data.authenticated) {
       onAuthenticated(data.user);
+      scheduleRefresh(data.user);
     } else {
       if (onUnauthenticated) onUnauthenticated();
     }
