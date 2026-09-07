@@ -250,6 +250,7 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
   const headers = new Headers({
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   });
@@ -627,7 +628,7 @@ async function logoutEndpoint(request: Request, env: Env, body: Record<string, u
 
   const origin = request.headers.get('Origin');
   if (!origin || (!frontendOrigins(env).includes(origin) && !env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin))) {
-    return new Response('Forbidden', { status: 403 });
+    return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
   }
 
   // Add token JTI to REVOCATION_KV with TTL matching remaining lifetime
@@ -832,7 +833,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
       html: `<p>Blocked Google login attempt for email: ${userEmail || 'Unknown'}</p>`,
     }).catch(console.error));
     ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }, request.headers.get('x-axim-trace-id') || undefined));
-    return new Response('Forbidden', { status: 403 });
+    return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
   }
 
   const approvedRedir = approvedRedirect(env, state.redirectUrl);
@@ -920,12 +921,12 @@ async function finishApple(request: Request, env: Env, ctx: ExecutionContext, ur
       html: `<p>Blocked Apple login attempt for email: ${userEmail || 'Unknown'}</p>`,
     }).catch(console.error));
     ctx.waitUntil(dispatchCoreTelemetry(env, 'auth.blocked', { email: userEmail || 'Unknown', reason: 'unauthorized_identity' }, request.headers.get('x-axim-trace-id') || undefined));
-    return new Response('Forbidden', { status: 403 });
+    return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
   }
 
   const approvedRedir = approvedRedirect(env, state.redirectUrl);
   if (!approvedRedir) {
-    return new Response('Forbidden', { status: 403 });
+    return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
   }
 
   let uuid;
@@ -1421,6 +1422,9 @@ export default {
     const response = await this.handleFetch(req, env, ctx);
 
     const newHeaders = new Headers(response.headers);
+    if (new URL(request.url).pathname.startsWith('/api/v1/auth/')) {
+      newHeaders.set('Cache-Control', 'no-store');
+    }
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
       newHeaders.set(key, value);
     }
@@ -1442,7 +1446,7 @@ export default {
     if (request.method === 'GET' && url.pathname === '/api/v1/telemetry/health-stats') {
       const authHeader = request.headers.get('Authorization');
       if (!authHeader || authHeader !== 'Bearer ' + env.ADMIN_API_KEY) {
-        return new Response('Unauthorized', { status: 401 });
+        return json(request, env, { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }, 401);
       }
 
       const list = await env.SECURITY_AUDIT_LOGS.list({ prefix: 'alert:' });
@@ -1489,7 +1493,7 @@ export default {
     if (rateLimitedPaths.includes(url.pathname)) {
       if (!checkRateLimit(ip)) {
         log('rate_limit_exceeded', { ip, path: url.pathname });
-        return new Response(JSON.stringify({ error: 'Too Many Requests' }), {
+        return new Response(JSON.stringify({ success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too Many Requests' } }), {
           status: 429,
           headers: {
             ...corsHeaders(request, env),
@@ -1507,16 +1511,16 @@ export default {
       const isAllowedRedirectOrigin = origin ? env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin) : false;
 
       if (url.pathname === '/api/v1/auth/token/consume') {
-        if (!isAllowedRedirectOrigin) return new Response('Forbidden', { status: 403 });
+        if (!isAllowedRedirectOrigin) return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
       } else if (url.pathname === '/api/v1/auth/logout') {
-        if (!isFrontendOrigin && !isAllowedRedirectOrigin) return new Response('Forbidden', { status: 403 });
+        if (!isFrontendOrigin && !isAllowedRedirectOrigin) return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
       } else {
         // Default for other POSTs like verify, wallet challenge, telemetry
-        if (!isFrontendOrigin && url.pathname !== '/api/v1/auth/verify-token') return new Response('Forbidden', { status: 403 });
+        if (!isFrontendOrigin && url.pathname !== '/api/v1/auth/verify-token') return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
       }
 
       const body = await parseJson(request);
-      if (!body) return json(request, env, { error: 'Invalid request body' }, 400);
+      if (!body) return json(request, env, { success: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
       if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
       if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
       if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, ctx, body);
@@ -1536,6 +1540,6 @@ export default {
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(request, env, ctx, url);
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple') return startApple(request, env, url);
     if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple/callback') return finishApple(request, env, ctx, url);
-    return new Response('Not found', { status: 404 });
+    return json(request, env, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
   },
 };

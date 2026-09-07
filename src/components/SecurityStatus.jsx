@@ -7,20 +7,20 @@ function SecurityStatus({ readiness, errorWarning }) {
   const items = [
     {
       icon: FiShield,
-      label: 'Turnstile protection',
-      value: readiness.turnstile ? 'Ready' : 'Required',
+      label: 'Bot Protection',
+      value: readiness.turnstile ? 'Verified' : 'Required',
       color: readiness.turnstile ? 'text-emerald-400' : 'text-rose-400'
     },
     {
       icon: FiLock,
-      label: 'Redirect validation',
+      label: 'Session Security',
       value: readiness.redirect && readiness.origins ? 'Approved' : 'Blocked',
       color: readiness.redirect && readiness.origins ? 'text-emerald-400' : 'text-rose-400'
     },
     {
       icon: FiZap,
-      label: 'Passport Worker',
-      value: readiness.worker ? 'Protected' : 'Required',
+      label: 'Edge Connection',
+      value: readiness.worker ? 'Active' : 'Degraded',
       color: readiness.worker ? 'text-emerald-400' : 'text-amber-400'
     },
   ];

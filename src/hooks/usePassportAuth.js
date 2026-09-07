@@ -157,6 +157,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
       } else if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
         fail('Authentication was cancelled. Please try again.', true);
       } else {
+        publishTelemetry('auth_error', { method: 'google', error: authenticationError.message });
         fail(authenticationError.message || 'Google authentication failed.');
       }
     }
@@ -188,6 +189,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
       } else if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
         fail('Authentication was cancelled. Please try again.');
       } else {
+        publishTelemetry('auth_error', { method: 'apple', error: authenticationError.message });
         fail(authenticationError.message || 'Apple authentication failed.');
       }
     }

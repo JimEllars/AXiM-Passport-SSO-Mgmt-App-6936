@@ -7,6 +7,7 @@ function TurnstileBox({ onToken, onError, resetKey }) {
   const widgetRef = useRef(null);
   const callbacksRef = useRef({ onToken, onError });
   const [status, setStatus] = useState('loading');
+  const [showRetry, setShowRetry] = useState(false);
 
   useEffect(() => {
     callbacksRef.current = { onToken, onError };
@@ -21,6 +22,7 @@ function TurnstileBox({ onToken, onError, resetKey }) {
     let attempts = 0;
     let timeoutId;
     let refreshIntervalId; // Add interval reference
+    let fallbackTimeoutId;
 
     const fail = (message) => {
       if (!cancelled) {
@@ -30,6 +32,14 @@ function TurnstileBox({ onToken, onError, resetKey }) {
     };
 
     const renderWidget = () => {
+      // 10-second fallback if widget doesn't verify
+      fallbackTimeoutId = window.setTimeout(() => {
+        if (status === 'loading' || !window.turnstile) {
+          setShowRetry(true);
+          fail('Cloudflare security verification stalled.');
+        }
+      }, 10000);
+
       if (cancelled) {
         return;
       }
@@ -84,6 +94,7 @@ function TurnstileBox({ onToken, onError, resetKey }) {
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+      window.clearTimeout(fallbackTimeoutId);
       if (refreshIntervalId) clearInterval(refreshIntervalId);
 
       if (widgetRef.current !== null && window.turnstile) {
