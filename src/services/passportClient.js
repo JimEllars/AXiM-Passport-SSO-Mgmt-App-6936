@@ -32,7 +32,16 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to consume token: ${res.statusText}`);
+      const err = new Error(`Failed to consume token: ${res.statusText}`);
+      err.status = res.status;
+      if (workerUrl) {
+         fetch(`${workerUrl}/api/v1/telemetry`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: 'client_network_failure', error: err.message, timestamp: new Date().toISOString() })
+         }).catch(()=>{});
+      }
+      throw err;
     }
 
     const data = await res.json();

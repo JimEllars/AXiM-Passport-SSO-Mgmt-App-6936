@@ -19,7 +19,14 @@ const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supa
 
 function usePassportAuth(redirectUrl) {
 
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(() => {
+    try {
+      const cached = localStorage.getItem('optimistic_session');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [identities, setIdentities] = useState([]);
 
   useEffect(() => {
@@ -34,6 +41,10 @@ function usePassportAuth(redirectUrl) {
            localStorage.setItem('optimistic_session', JSON.stringify(data.user));
            setSession(data.user);
            return fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/identities`, { credentials: 'include' });
+         } else {
+           localStorage.removeItem('optimistic_session');
+           setSession(null);
+           throw new Error('Unauthenticated');
          }
       })
       .then(res => res?.json())
@@ -42,7 +53,8 @@ function usePassportAuth(redirectUrl) {
            setIdentities(data.identities);
          }
       })
-      .catch(() => {
+      .catch((e) => {
+         if (e.message === 'Unauthenticated') return;
          // Optimistic session recovery
          const cached = localStorage.getItem('optimistic_session');
          if (cached) {
@@ -72,7 +84,7 @@ function usePassportAuth(redirectUrl) {
                }, backoff);
              };
              retry();
-           } catch(e){ /* ignore */ }
+           } catch(err){ /* ignore */ }
          }
       });
   }, []);
@@ -130,6 +142,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
       setVerificationStage('initial');
       resetVerification();
     }
+    publishTelemetry('client_network_failure', { error: message });
   }, [resetVerification]);
 
   const startGoogle = useCallback(async () => {

@@ -151,7 +151,7 @@ function PassportCard({
   };
 
   return (
-    <main className="passport-card relative overflow-hidden backdrop-blur-md bg-slate-900/90 border border-slate-800 shadow-2xl shadow-cyan-950/20">
+    <main className="passport-card relative overflow-hidden backdrop-blur-md bg-slate-900/90 border border-white/10 shadow-2xl shadow-cyan-950/20">
       <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 via-emerald-500/20 to-indigo-500/20 opacity-30 animate-pulse" style={{ zIndex: 0, pointerEvents: 'none' }}></div>
       <div className="relative" style={{ zIndex: 1 }}>
       <BrandMark />
