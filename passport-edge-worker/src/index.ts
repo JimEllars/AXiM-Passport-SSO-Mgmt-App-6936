@@ -24,6 +24,7 @@ export interface Env {
   TURNSTILE_SECRET_KEY: string;
   WALLET_CHAIN_ID: string;
   SECURITY_AUDIT_LOGS: KVNamespace;
+  ENVIRONMENT?: string;
   REVOCATION_KV: KVNamespace;
 }
 
@@ -222,10 +223,18 @@ function approvedRedirect(env: Env, value: unknown): string | null {
 
   try {
     const url = new URL(value);
-    const approvedOrigins = env.ALLOWED_REDIRECT_ORIGINS.split(',')
-      .map((origin) => originFrom(origin.trim()))
-      .filter((origin): origin is string => origin !== null);
-    return url.protocol === 'https:' && approvedOrigins.includes(url.origin) ? url.toString() : null;
+  const isAximSubdomain = /^https:\/\/([a-zA-Z0-9-]+\.)*axim\.us\.com(:[0-9]+)?(\/.*)?$/.test(url.origin);
+  const isLocalhost = env.ENVIRONMENT === 'development' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+
+  if (isAximSubdomain || isLocalhost) {
+    return url.toString();
+  }
+
+  const approvedOrigins = env.ALLOWED_REDIRECT_ORIGINS.split(',')
+    .map((origin) => originFrom(origin.trim()))
+    .filter((origin): origin is string => origin !== null);
+
+  return url.protocol === 'https:' && approvedOrigins.includes(url.origin) ? url.toString() : null;
   } catch {
     return null;
   }
@@ -247,10 +256,23 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
 
   const origin = request.headers.get('Origin');
   if (origin) {
+    const isAximSubdomain = /^https:\/\/([a-zA-Z0-9-]+\.)*axim\.us\.com(:[0-9]+)?(\/.*)?$/.test(origin);
+    const isPagesDev = origin === 'https://axim-passport.pages.dev';
+
+    let isLocalhost = false;
+    try {
+      const url = new URL(origin);
+      isLocalhost = env.ENVIRONMENT === 'development' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+    } catch {
+      // Ignore URL parsing errors for origin
+    }
+
     const isFrontendOrigin = frontendOrigins(env).includes(origin);
     const isAllowedRedirectOrigin = env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin);
-    if (isFrontendOrigin || isAllowedRedirectOrigin) {
+
+    if (isAximSubdomain || isPagesDev || isLocalhost || isFrontendOrigin || isAllowedRedirectOrigin) {
       headers.set('Access-Control-Allow-Origin', origin);
+      headers.set('Access-Control-Allow-Credentials', 'true');
     }
   }
 

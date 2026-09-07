@@ -15,7 +15,20 @@ function getAppNameFromUrl(urlStr) {
       case 'nexus.axim.us.com': return 'Nexus CRM';
       case 'echo.axim.us.com': return 'Echo Recovery';
       case 'onyx.axim.us.com': return 'Onyx Portal';
-      default: return 'AXiM Ecosystem';
+      case 'greenmachine.axim.us.com': return 'Green Machine';
+      case 'support.axim.us.com': return 'Support System';
+      case 'asguard.axim.us.com': return 'Asguard SOC';
+      case 'voice.axim.us.com': return 'Voice Core';
+      case 'groundgame.axim.us.com': return 'Ground Game';
+      case 'ceodept.axim.us.com': return 'CEO Dept';
+      default: {
+        const parts = url.hostname.split('.');
+        if (parts.length >= 3 && parts[parts.length - 2] === 'us' && parts[parts.length - 1] === 'com' && parts[parts.length - 3] === 'axim') {
+           const subdomain = parts[0];
+           return subdomain.charAt(0).toUpperCase() + subdomain.slice(1);
+        }
+        return 'AXiM Ecosystem';
+      }
     }
   } catch (e) {
     return 'AXiM Ecosystem';

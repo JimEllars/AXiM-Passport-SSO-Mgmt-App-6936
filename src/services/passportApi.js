@@ -28,6 +28,13 @@ function assertApprovedRedirect(redirectUrl) {
     throw new Error('The requested application callback is not secure.');
   }
 
+  const isAximSubdomain = /^https:\/\/([a-zA-Z0-9-]+\.)*axim\.us\.com(:[0-9]+)?(\/.*)?$/.test(url.origin);
+  const isLocalhost = import.meta.env.MODE === 'development' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+
+  if (isAximSubdomain || isLocalhost) {
+    return url;
+  }
+
   if (configuredOrigins.length === 0) {
     throw new Error('Approved AXiM redirect origins are not configured.');
   }

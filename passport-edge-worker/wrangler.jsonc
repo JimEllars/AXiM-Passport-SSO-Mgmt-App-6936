@@ -12,7 +12,7 @@
     "AXIM_CORE_API_URL": "https://api.axim.us.com",
     "PASSPORT_ORIGIN": "https://passport.axim.us.com",
     "FRONTEND_ORIGINS": "https://passport.axim.us.com,https://axim-passport.pages.dev",
-    "ALLOWED_REDIRECT_ORIGINS": "https://nexus.axim.us.com,https://echo.axim.us.com,https://onyx.axim.us.com",
+    "ALLOWED_REDIRECT_ORIGINS": "https://nexus.axim.us.com,https://echo.axim.us.com,https://onyx.axim.us.com,https://greenmachine.axim.us.com,https://support.axim.us.com,https://asguard.axim.us.com,https://voice.axim.us.com,https://groundgame.axim.us.com,https://ceodept.axim.us.com",
     "SUPABASE_URL": "https://pvbcdndqjguzqeafhwhw.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "",
     "SUPABASE_ANON_KEY": "",
