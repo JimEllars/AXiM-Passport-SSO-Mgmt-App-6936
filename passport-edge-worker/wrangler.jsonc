@@ -4,6 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
+  "route": {
+    "pattern": "passport.axim.us.com/api/*",
+    "zone_name": "axim.us.com"
+  },
   "vars": {
     "AXIM_CORE_API_URL": "https://api.axim.us.com",
     "PASSPORT_ORIGIN": "https://passport.axim.us.com",
