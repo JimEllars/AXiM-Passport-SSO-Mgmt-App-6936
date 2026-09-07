@@ -17,11 +17,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
         working-directory: ./passport-edge-worker
-        run: npm install
+        run: npm ci
 
       - name: Build
         working-directory: ./passport-edge-worker
@@ -33,4 +33,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'passport-edge-worker'
+          wranglerVersion: '4.129.1'
           command: deploy -c wrangler.jsonc
