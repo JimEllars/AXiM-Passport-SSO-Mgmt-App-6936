@@ -1,4 +1,11 @@
-const workerUrl = (import.meta.env.VITE_PASSPORT_EDGE_URL || '').replace(/\/$/, '');
+const primaryWorkerUrl = (import.meta.env.VITE_PASSPORT_EDGE_URL || '').replace(/\/$/, '');
+const fallbackPassportUrl = (import.meta.env.VITE_PASSPORT_FALLBACK_URL || '').replace(/\/$/, '');
+const fallbackWorkerUrl = (import.meta.env.VITE_PASSPORT_FALLBACK_EDGE_URL || '').replace(/\/$/, '');
+const workerUrl = fallbackPassportUrl
+  && fallbackWorkerUrl
+  && window.location.origin === fallbackPassportUrl
+  ? fallbackWorkerUrl
+  : primaryWorkerUrl;
 const configuredOrigins = (import.meta.env.VITE_ALLOWED_REDIRECT_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim().replace(/\/$/, ''))

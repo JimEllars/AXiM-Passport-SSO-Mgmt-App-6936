@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { extractHandoffToken, consumeTokenAndCleanUrl, buildPassportRedirectUrl } from '../services/passportClient';
+import { extractHandoffToken, consumeTokenAndCleanUrl, executePassportRedirect } from '../services/passportClient';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 const passportUrl = import.meta.env.VITE_PASSPORT_URL || 'https://passport.axim.us.com';
+const workerUrl = import.meta.env.VITE_PASSPORT_EDGE_URL || passportUrl;
+const fallbackPassportUrl = import.meta.env.VITE_PASSPORT_FALLBACK_URL || 'https://axim-passport.pages.dev';
+const fallbackWorkerUrl = import.meta.env.VITE_PASSPORT_FALLBACK_EDGE_URL || '';
 
 function Sandbox() {
   const [result, setResult] = useState(null);
@@ -116,27 +119,16 @@ function Sandbox() {
 
   const handleSimulateLogin = async () => {
     setLoading(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
 
     try {
-      const res = await fetch(`${passportUrl}/api/v1/health`, {
-        signal: controller.signal
+      await executePassportRedirect({
+        passportUrl,
+        callbackUrl: window.location.href,
+        workerUrl,
+        fallbackPassportUrl,
+        fallbackWorkerUrl,
       });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const redirectUrl = buildPassportRedirectUrl({
-          passportUrl,
-          callbackUrl: window.location.href
-        });
-        window.location.assign(redirectUrl);
-        return;
-      } else {
-        throw new Error('Passport health check failed');
-      }
     } catch (err) {
-      clearTimeout(timeoutId);
       setError('Passport SSO gateway is currently unavailable. Falling back to local login.');
       setShowLegacyLogin(true);
       setLoading(false);

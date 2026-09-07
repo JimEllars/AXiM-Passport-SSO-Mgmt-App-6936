@@ -763,7 +763,7 @@ async function startGoogle(request: Request, env: Env, url: URL): Promise<Respon
     redirectUrl,
   });
 
-  const callback = new URL('/api/v1/auth/google/callback', env.PASSPORT_ORIGIN);
+  const callback = new URL('/api/v1/auth/google/callback', request.url);
   callback.searchParams.set('state', state);
   const authorize = new URL('/auth/v1/authorize', env.SUPABASE_URL);
   authorize.searchParams.set('provider', 'google');
@@ -853,7 +853,7 @@ async function startApple(request: Request, env: Env, url: URL): Promise<Respons
     redirectUrl,
   });
 
-  const callback = new URL('/api/v1/auth/apple/callback', env.PASSPORT_ORIGIN);
+  const callback = new URL('/api/v1/auth/apple/callback', request.url);
   callback.searchParams.set('state', state);
   const authorize = new URL('/auth/v1/authorize', env.SUPABASE_URL);
   authorize.searchParams.set('provider', 'apple');

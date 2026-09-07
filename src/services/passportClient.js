@@ -84,11 +84,48 @@ export function buildPassportRedirectUrl({ passportUrl, callbackUrl }) {
   return url.toString();
 }
 
+async function isReachable(url) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+  try {
+    // An opaque response is sufficient here: this probe only distinguishes a
+    // network/DNS failure from a reachable Passport origin.
+    await fetch(url, {
+      cache: 'no-store',
+      mode: 'no-cors',
+      signal: controller.signal,
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function isWorkerHealthy(workerUrl) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const response = await fetch(`${workerUrl.replace(/\/$/, '')}/api/v1/health`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    return response.ok
+      && (response.headers.get('content-type') || '').includes('application/json');
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
- * Executes a pre-flight health check to the AXiM Passport edge worker.
- * If successful, redirects the user to the AXiM Passport Hub for authentication.
- * If the worker is unreachable (e.g., DNS error, infrastructure outage) or times out,
- * it throws a structured 'PASSPORT_UNAVAILABLE' error.
+ * Redirects to Passport after verifying both the API and browser-facing origin.
+ * When the primary hostname is unavailable during DNS propagation, it uses the
+ * independently configured Pages and Workers.dev fallback pair.
  *
  * Downstream developers should wrap this call in a try/catch block and render a
  * local fallback UI if the SSO gateway is down.
@@ -97,28 +134,36 @@ export function buildPassportRedirectUrl({ passportUrl, callbackUrl }) {
  * @param {string} params.passportUrl - The base URL of the AXiM Passport Hub.
  * @param {string} params.callbackUrl - The URL to redirect back to after successful authentication.
  * @param {string} params.workerUrl - The base URL of the AXiM Passport edge worker for health checking.
+ * @param {string} [params.fallbackPassportUrl] - The Pages fallback URL.
+ * @param {string} [params.fallbackWorkerUrl] - The Workers.dev fallback API URL.
  * @returns {Promise<void>} Resolves when the redirect is initiated, throws on pre-flight failure.
  */
-export async function executePassportRedirect({ passportUrl, callbackUrl, workerUrl }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2500);
-
-  try {
-    const res = await fetch(`${workerUrl}/api/v1/health`, {
-      method: 'GET',
-      signal: controller.signal
-    });
-
-    if (!res.ok) {
-      throw new Error('PASSPORT_UNAVAILABLE');
-    }
-  } catch (err) {
-    throw new Error('PASSPORT_UNAVAILABLE');
-  } finally {
-    clearTimeout(timeoutId);
+export async function executePassportRedirect({
+  passportUrl,
+  callbackUrl,
+  workerUrl,
+  fallbackPassportUrl,
+  fallbackWorkerUrl,
+}) {
+  const primaryReady = await isWorkerHealthy(workerUrl) && await isReachable(passportUrl);
+  if (primaryReady) {
+    window.location.assign(buildPassportRedirectUrl({ passportUrl, callbackUrl }));
+    return;
   }
 
-  window.location.assign(buildPassportRedirectUrl({ passportUrl, callbackUrl }));
+  const fallbackReady = fallbackPassportUrl
+    && fallbackWorkerUrl
+    && await isWorkerHealthy(fallbackWorkerUrl)
+    && await isReachable(fallbackPassportUrl);
+  if (fallbackReady) {
+    window.location.assign(buildPassportRedirectUrl({
+      passportUrl: fallbackPassportUrl,
+      callbackUrl,
+    }));
+    return;
+  }
+
+  throw new Error('PASSPORT_UNAVAILABLE');
 }
 
 /**

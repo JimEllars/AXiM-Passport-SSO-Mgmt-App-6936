@@ -14,22 +14,21 @@ npm install git+https://github.com/jimellars/axim-passport-sso-mgmt-app-6936.git
 
 When a user accesses your application without a valid session, redirect them to the AXiM Passport Hub for authentication.
 
-You can use the `buildPassportRedirectUrl` utility provided by the SDK to correctly format the handoff URL.
+Use `executePassportRedirect` to verify the Passport UI and API before navigation. It automatically uses the supplied fallback pair if the primary hostname is unavailable during DNS propagation.
 
 ```javascript
-import { buildPassportRedirectUrl } from '@axim/passport-sdk';
+import { executePassportRedirect } from '@axim/passport-sdk';
 
 // Determine your app's callback URL
 const callbackUrl = `${window.location.origin}/auth/callback`;
 
-// Build the redirect URL
-const loginUrl = buildPassportRedirectUrl({
-  passportUrl: 'https://passport.axim.com', // Replace with the actual AXiM Passport URL
-  callbackUrl: callbackUrl,
+await executePassportRedirect({
+  passportUrl: 'https://passport.axim.us.com',
+  workerUrl: 'https://passport.axim.us.com',
+  fallbackPassportUrl: 'https://axim-passport.pages.dev',
+  fallbackWorkerUrl: 'https://axim-passport-api.<your-workers-dev-subdomain>.workers.dev',
+  callbackUrl,
 });
-
-// Redirect the user
-window.location.href = loginUrl;
 ```
 
 ## 3. Handle the Returning Token
@@ -98,7 +97,7 @@ const handleAuthHandoff = async () => {
 ## Summary
 
 1. User visits your application.
-2. If unauthenticated, redirect them to `passport.axim.com` with `?redirect=YOUR_URL`.
+2. If unauthenticated, call `executePassportRedirect` with the production and fallback Passport URLs.
 3. User logs in to AXiM Passport.
 4. User is redirected back to `YOUR_URL?token=YOUR_TOKEN`.
 5. Your app uses `@axim/passport-sdk` to consume the token, hydrating your local Supabase session and cleaning the URL.

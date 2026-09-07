@@ -7,18 +7,14 @@ AXiM Passport is the browser-facing SSO handoff application for approved AXiM ap
 | Component | Production resource |
 | --- | --- |
 | Frontend | Cloudflare Pages project `axim-passport` |
-| API | Worker `axim-passport-api` (`https://axim-passport-api.axim.us.com`) |
+| API | Worker `axim-passport-api` routed at `https://passport.axim.us.com/api/*` |
 | Authentication state | `AuthState` Durable Object |
 | Bot protection | Managed Turnstile widget `axim-passport` |
 | Public hostname | `https://passport.axim.us.com` |
 
 The Worker uses a Durable Object, rather than Workers KV, for short-lived OAuth state and SIWE nonces. Its atomic consume operation prevents a nonce or OAuth state value from being reused.
-Until the custom domain is mapped, the Pages hostname is also an approved frontend origin for wallet-flow staging. Google OAuth completes only after the custom hostname is active because its callback is intentionally fixed to the Passport domain.
+The Pages hostname is an approved fallback frontend origin. OAuth callbacks use the active Worker host, allowing the Workers.dev failover path to complete authentication while the primary hostname propagates.
 
-
-## Infrastructure Requirements
-
-Before traffic can be routed to the SSO gateway, a CNAME record for the Passport custom domain (e.g., `passport.axim.us.com`) MUST be mapped to the Cloudflare Pages target (`<project>.pages.dev`) in the Cloudflare DNS dashboard.
 
 ## Required Cloudflare configuration
 
@@ -47,9 +43,19 @@ Enable Google in the Supabase project's Auth provider settings, configure the Go
 https://passport.axim.us.com/api/v1/auth/google/callback
 ```
 
-## Required Pages domain configuration
+## Required routing and failover configuration
 
-In Cloudflare Pages, add `passport.axim.us.com` as a custom domain for the `axim-passport` project. The Cloudflare token used for this deployment does not have DNS write permission, so the domain mapping must be approved through the Cloudflare dashboard or by an account token with DNS edit access. The Turnstile widget already permits both the custom hostname and the Pages fallback hostname.
+1. In Cloudflare Pages, add `passport.axim.us.com` as a custom domain for the `axim-passport` project. This creates and maintains the required DNS record and certificate; do not create a competing manual CNAME.
+2. Deploy `passport-edge-worker/wrangler.jsonc`. Its `passport.axim.us.com/api/*` route must remain attached to `axim-passport-api`, so API requests do not fall through to the Pages SPA.
+3. Keep the generated Workers.dev URL enabled for `axim-passport-api`. Set it as `VITE_PASSPORT_FALLBACK_EDGE_URL`, and set `VITE_PASSPORT_FALLBACK_URL=https://axim-passport.pages.dev`. The client probes the primary pair before navigation and uses this Pages/Workers.dev pair only when the primary hostname cannot be reached.
+4. Add both callback URLs to Supabase Auth Redirect URLs:
+
+```text
+https://passport.axim.us.com/api/v1/auth/google/callback
+https://axim-passport-api.<your-workers-dev-subdomain>.workers.dev/api/v1/auth/google/callback
+https://passport.axim.us.com/api/v1/auth/apple/callback
+https://axim-passport-api.<your-workers-dev-subdomain>.workers.dev/api/v1/auth/apple/callback
+```
 
 ## Deployment
 
