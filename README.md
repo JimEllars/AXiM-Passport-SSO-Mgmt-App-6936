@@ -24,6 +24,14 @@ The Worker requires these secrets:
 TURNSTILE_SECRET_KEY
 JWT_SECRET
 SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_JWT_SECRET
+AXIM_INTERNAL_KEY
+ADMIN_API_KEY
+EMAILIT_API_KEY
+EMAILIT_WEBHOOK_SECRET
+RESEND_API_KEY
+ADMIN_ALERT_EMAIL
 ```
 
 Set a secret interactively without placing it in a file or shell history:
@@ -34,6 +42,8 @@ npx wrangler secret put SUPABASE_ANON_KEY --name axim-passport-api
 ```
 
 `SUPABASE_URL`, `PASSPORT_ORIGIN`, approved callback origins, the wallet chain, and the expected Turnstile action are versioned in `passport-edge-worker/wrangler.jsonc`. Before changing an approved application, update `ALLOWED_REDIRECT_ORIGINS` and redeploy the Worker.
+
+Secrets are deliberately absent from `wrangler.jsonc`; defining empty values there replaces the secret binding during deployment. The Worker also requires the dedicated `AXIM_PASSPORT_REVOCATION` and `AXIM_PASSPORT_SECURITY_AUDIT` KV namespaces configured in that file.
 
 ## Required Supabase configuration
 
@@ -82,6 +92,9 @@ The pipelines deploy updates seamlessly with zero downtime, without disrupting a
 The following GitHub Repository Secrets are required to authenticate with Cloudflare for deployment:
 - `CLOUDFLARE_API_TOKEN`: A Cloudflare API token with permissions to edit Pages and Workers.
 - `CLOUDFLARE_ACCOUNT_ID`: The Cloudflare account ID where the resources are deployed.
+- `VITE_TURNSTILE_SITE_KEY`: The public site key for the production Turnstile widget.
+
+The Pages workflow reads `SUPABASE_API_URL` and `SUPABASE_ANON_PUBLIC_KEY` from GitHub repository variables. Never allow its production build to fall back to mock values.
 
 There are two primary deployment workflows:
 1. **Edge Worker Deployment**: Triggers when files inside the `passport-edge-worker/` directory change on the `main` branch.

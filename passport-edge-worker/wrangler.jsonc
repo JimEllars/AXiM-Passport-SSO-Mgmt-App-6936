@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
   "route": {
     "pattern": "passport.axim.us.com/api/*",
     "zone_name": "axim.us.com"
@@ -14,17 +15,8 @@
     "FRONTEND_ORIGINS": "https://passport.axim.us.com,https://axim-passport.pages.dev",
     "ALLOWED_REDIRECT_ORIGINS": "https://nexus.axim.us.com,https://echo.axim.us.com,https://onyx.axim.us.com,https://greenmachine.axim.us.com,https://support.axim.us.com,https://asguard.axim.us.com,https://voice.axim.us.com,https://groundgame.axim.us.com,https://ceodept.axim.us.com",
     "SUPABASE_URL": "https://pvbcdndqjguzqeafhwhw.supabase.co",
-    "SUPABASE_SERVICE_ROLE_KEY": "",
-    "SUPABASE_ANON_KEY": "",
-    "SUPABASE_JWT_SECRET": "",
     "WALLET_CHAIN_ID": "1",
-    "TURNSTILE_ACTION": "passport_auth",
-    "EMAILIT_API_KEY": "",
-    "EMAILIT_WEBHOOK_SECRET": "",
-    "RESEND_API_KEY": "",
-    "ADMIN_ALERT_EMAIL": "",
-    "ADMIN_API_KEY": "",
-    "AXIM_INTERNAL_KEY": ""
+    "TURNSTILE_ACTION": "passport_auth"
   },
   "durable_objects": {
     "bindings": [
@@ -37,13 +29,11 @@
   "kv_namespaces": [
     {
       "binding": "REVOCATION_KV",
-      "id": "REVOCATION_KV",
-      "preview_id": "REVOCATION_KV_PREVIEW"
+      "id": "61412cfc5af94df7896fc8432e9abf8b"
     },
     {
       "binding": "SECURITY_AUDIT_LOGS",
-      "id": "SECURITY_AUDIT_LOGS",
-      "preview_id": "SECURITY_AUDIT_LOGS_PREVIEW"
+      "id": "a28f87960ebd4b20a0fa26ca28ecbcbd"
     }
   ],
   "migrations": [
