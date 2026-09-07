@@ -12,6 +12,7 @@
     "typescript-eslint": "^8.68.0"
   },
   "dependencies": {
+    "jose": "^6.2.12",
     "viem": "^2.56.3"
   }
 }
