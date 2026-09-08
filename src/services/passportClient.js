@@ -1,3 +1,4 @@
+const getTracingHeaders = () => { const id = crypto.randomUUID(); return { "x-axim-correlation-id": id, "x-axim-trace-id": id }; };
 import { useEffect, useState } from 'react';
 
 /**
@@ -27,6 +28,7 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getTracingHeaders(),
       },
       body: JSON.stringify({ token, origin: window.location.origin }),
     });
@@ -55,7 +57,8 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
     if (traceId && workerUrl) {
       fetch(`${workerUrl}/api/v1/telemetry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-axim-trace-id': traceId },
+        headers: { 'Content-Type': 'application/json',
+        ...getTracingHeaders(), 'x-axim-trace-id': traceId },
         body: JSON.stringify({ event: 'session_restored', traceId, timestamp: new Date().toISOString(), sessionHash: 'anon' }),
         keepalive: true
       }).catch(()=>{});
@@ -114,21 +117,30 @@ async function isReachable(url) {
 }
 
 async function isWorkerHealthy(workerUrl) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2500);
+  let attempt = 0;
+  const maxRetries = 2;
+  while (attempt <= maxRetries) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
 
-  try {
-    const response = await fetch(`${workerUrl.replace(/\/$/, '')}/api/v1/health`, {
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-    return response.ok
-      && (response.headers.get('content-type') || '').includes('application/json');
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeoutId);
+    try {
+      const response = await fetch(`${workerUrl.replace(/\/$/, '')}/api/health`, {
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: getTracingHeaders(),
+      });
+      return response.ok
+        && (response.headers.get('content-type') || '').includes('application/json');
+    } catch {
+      attempt++;
+      if (attempt <= maxRetries) {
+        await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt - 1)));
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
+  return false;
 }
 
 /**
@@ -234,6 +246,7 @@ export async function executeGlobalLogout({ workerUrl, supabaseClient, token }) 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+        ...getTracingHeaders(),
     },
     body: JSON.stringify({ token }),
   });
@@ -298,7 +311,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
 
     refreshTimeoutId = setTimeout(async () => {
       try {
-        const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include' });
+        const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
         const data = await res.json();
         if (data.authenticated) {
           onAuthenticated(data.user);
@@ -310,7 +323,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
         // Queue state transition retry for when we come online
         const onOnline = async () => {
           window.removeEventListener('online', onOnline);
-          const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include' });
+          const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
           const data = await res.json();
           if (data.authenticated) {
             onAuthenticated(data.user);
@@ -325,7 +338,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
   };
 
   try {
-    const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include' });
+    const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
     const data = await res.json();
     if (data.authenticated) {
       onAuthenticated(data.user);

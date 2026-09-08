@@ -93,11 +93,15 @@ async function post(path, payload) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 5000);
 
+  const correlationId = crypto.randomUUID();
+
   try {
     const response = await fetch(`${workerUrl}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-axim-correlation-id': correlationId,
+        'x-axim-trace-id': correlationId,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -113,6 +117,11 @@ async function post(path, payload) {
       }
 
       throw new Error('Passport is temporarily unavailable.');
+    }
+
+    if (import.meta.env.MODE === 'development') {
+       const rayId = response.headers.get('cf-ray');
+       if (rayId) console.debug(`[AXiM Passport] API Response ${path} - Ray ID: ${rayId} - Trace: ${correlationId}`);
     }
 
     const data = await response.json();
@@ -256,17 +265,30 @@ export {
   getRedirectUrl,
 };
 export async function checkWorkerHealth() {
-  if (!workerUrl) return false;
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 5000);
-  try {
-    const res = await fetch(`${workerUrl}/api/v1/health`, { signal: controller.signal });
-    return res.ok;
-  } catch {
-    return false;
-  } finally {
-    window.clearTimeout(timeout);
+  let attempt = 0;
+  const maxRetries = 2;
+  const correlationId = crypto.randomUUID();
+  while (attempt <= maxRetries) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(`${workerUrl}/api/health`, {
+        signal: controller.signal,
+        headers: { "x-axim-correlation-id": correlationId, "x-axim-trace-id": correlationId }
+      });
+      if (import.meta.env.MODE === "development") {
+        const rayId = res.headers.get("cf-ray");
+        if (rayId) console.debug(`[AXiM Passport] API Response /api/health - Ray ID: ${rayId} - Trace: ${correlationId}`);
+      }
+      return res.ok;
+    } catch {
+      attempt++;
+      if (attempt <= maxRetries) await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt - 1)));
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
+  return false;
 }
 
 export async function logout(token) {

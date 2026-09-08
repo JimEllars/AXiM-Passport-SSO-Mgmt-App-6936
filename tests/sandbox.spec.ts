@@ -12,6 +12,14 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
       });
     });
 
+    await page.route('**/api/health', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' })
+      });
+    });
+
     await page.route('**/*passport.axim.us.com/*', async route => {
       await route.fulfill({ status: 200, body: 'mocked passport' });
     });
@@ -81,7 +89,7 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
             supabase_access_token: 'fake.jwt.token'
           })
         });
-      } else if (url.includes('/api/v1/health')) {
+      } else if (url.includes('/api/v1/health') || url.includes('/api/health')) {
         await route.fulfill({ status: 200, body: '{}' });
       } else {
         await route.continue();
@@ -127,7 +135,7 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
             supabase_access_token: 'fake.jwt.token'
           })
         });
-      } else if (url.includes('/api/v1/health')) {
+      } else if (url.includes('/api/v1/health') || url.includes('/api/health')) {
         await route.fulfill({ status: 200, body: '{}' });
       } else {
         await route.continue();

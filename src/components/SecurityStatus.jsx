@@ -3,7 +3,7 @@ import SafeIcon from '../common/SafeIcon';
 
 const { FiCheckCircle, FiLock, FiShield, FiZap, FiAlertTriangle } = FiIcons;
 
-function SecurityStatus({ readiness, errorWarning }) {
+function SecurityStatus({ readiness, errorWarning, connectionStatus }) {
   const items = [
     {
       icon: FiShield,
@@ -20,8 +20,8 @@ function SecurityStatus({ readiness, errorWarning }) {
     {
       icon: FiZap,
       label: 'Edge Connection',
-      value: readiness.worker ? 'Active' : 'Degraded',
-      color: readiness.worker ? 'text-emerald-400' : 'text-amber-400'
+      value: connectionStatus === 'connected' ? 'Active' : connectionStatus === 'reconnecting' ? 'Degraded' : 'Offline',
+      color: connectionStatus === 'connected' ? 'text-emerald-400' : connectionStatus === 'reconnecting' ? 'text-amber-400' : 'text-rose-400'
     },
   ];
 
@@ -50,7 +50,7 @@ function SecurityStatus({ readiness, errorWarning }) {
               <SafeIcon icon={icon} />
               <span>{label}</span>
             </div>
-            <strong className={`text-xs ${color}`}>
+            <strong className={`text-xs ${color === 'text-emerald-400' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded w-fit mt-1' : color === 'text-amber-400' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded w-fit mt-1' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 py-0.5 rounded w-fit mt-1'}`}>
               {value}
             </strong>
           </div>
