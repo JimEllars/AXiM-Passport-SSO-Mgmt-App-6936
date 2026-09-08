@@ -1413,6 +1413,7 @@ export default {
   },
 
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const startTime = Date.now();
     const traceId = request.headers.get('x-axim-trace-id') || crypto.randomUUID();
     const req = new Request(request, {
       headers: new Headers(request.headers)
@@ -1420,6 +1421,22 @@ export default {
     req.headers.set('x-axim-trace-id', traceId);
 
     const response = await this.handleFetch(req, env, ctx);
+
+    const duration = Date.now() - startTime;
+
+    // Log structured telemetry on every auth attempt (or all requests handled by fetch)
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/v1/auth/')) {
+       const telemetryPayload = {
+         duration,
+         rayId: request.headers.get('cf-ray'),
+         country: request.cf?.country,
+         asn: request.cf?.asn,
+         status: response.status,
+         path: url.pathname
+       };
+       ctx.waitUntil(dispatchCoreTelemetry(env, 'auth_request', telemetryPayload, traceId));
+    }
 
     const newHeaders = new Headers(response.headers);
     if (new URL(request.url).pathname.startsWith('/api/v1/auth/')) {
@@ -1478,6 +1495,24 @@ export default {
       });
     }
 
+
+    if (request.method === 'GET' && url.pathname === '/health/bindings') {
+      const bindings = {
+        turnstile: !!env.TURNSTILE_SECRET_KEY,
+        jwt: !!(env.JWT_SECRET || env.SUPABASE_JWT_SECRET),
+        email: !!(env.EMAILIT_API_KEY || env.RESEND_API_KEY),
+        kvSessions: !!env.REVOCATION_KV
+      };
+
+      const isHealthy = Object.values(bindings).every(v => v);
+
+      return json(request, env, {
+        status: isHealthy ? 'healthy' : 'degraded',
+        timestamp: new Date().toISOString(),
+        bindings: bindings
+      });
+    }
+
     if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/v1/health') {
 
       return json(request, env, { status: 'operational', timestamp: new Date().toISOString() });
@@ -1504,42 +1539,49 @@ export default {
       }
     }
 
-    if (request.method === 'POST') {
-      const origin = request.headers.get('Origin');
+    try {
+      if (request.method === 'POST') {
+        const origin = request.headers.get('Origin');
 
-      const isFrontendOrigin = origin ? frontendOrigins(env).includes(origin) : false;
-      const isAllowedRedirectOrigin = origin ? env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin) : false;
+        const isFrontendOrigin = origin ? frontendOrigins(env).includes(origin) : false;
+        const isAllowedRedirectOrigin = origin ? env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin) : false;
 
-      if (url.pathname === '/api/v1/auth/token/consume') {
-        if (!isAllowedRedirectOrigin) return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
-      } else if (url.pathname === '/api/v1/auth/logout') {
-        if (!isFrontendOrigin && !isAllowedRedirectOrigin) return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
-      } else {
-        // Default for other POSTs like verify, wallet challenge, telemetry
-        if (!isFrontendOrigin && url.pathname !== '/api/v1/auth/verify-token') return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+        if (url.pathname === '/api/v1/auth/token/consume') {
+          if (!isAllowedRedirectOrigin) return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+        } else if (url.pathname === '/api/v1/auth/logout') {
+          if (!isFrontendOrigin && !isAllowedRedirectOrigin) return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+        } else {
+          if (!isFrontendOrigin && url.pathname !== '/api/v1/auth/verify-token') return json(request, env, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+        }
+
+        const body = await parseJson(request);
+        if (!body) return json(request, env, { success: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
+
+        if (url.pathname === '/api/v1/auth/wallet/challenge') return await startWalletChallenge(request, env, body);
+        if (url.pathname === '/api/v1/auth/verify') return await verifyWallet(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/token/consume') return await consumeTokenEndpoint(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/verify-token') return await verifyTokenEndpoint(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/link-wallet') return await linkWalletEndpoint(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/logout') return await logoutEndpoint(request, env, body, ctx);
+        if (url.pathname === '/api/v1/telemetry') return await handleTelemetry(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/email/start') return await startEmailOtp(request, env, body);
+        if (url.pathname === '/api/v1/auth/email/verify') return await verifyEmailOtp(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/link-provider') return await linkProviderEndpoint(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/unlink-provider') return await unlinkProviderEndpoint(request, env, body);
       }
 
-      const body = await parseJson(request);
-      if (!body) return json(request, env, { success: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
-      if (url.pathname === '/api/v1/auth/wallet/challenge') return startWalletChallenge(request, env, body);
-      if (url.pathname === '/api/v1/auth/verify') return verifyWallet(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/token/consume') return consumeTokenEndpoint(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/verify-token') return verifyTokenEndpoint(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/link-wallet') return linkWalletEndpoint(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/logout') return logoutEndpoint(request, env, body, ctx);
-      if (url.pathname === '/api/v1/telemetry') return handleTelemetry(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/email/start') return startEmailOtp(request, env, body);
-      if (url.pathname === '/api/v1/auth/email/verify') return verifyEmailOtp(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/link-provider') return linkProviderEndpoint(request, env, ctx, body);
-      if (url.pathname === '/api/v1/auth/unlink-provider') return unlinkProviderEndpoint(request, env, body);
+      if (request.method === 'GET' && url.pathname === '/api/v1/auth/session') return await handleSessionEndpoint(request, env);
+      if (request.method === 'GET' && url.pathname === '/api/v1/auth/identities') return await listIdentitiesEndpoint(request, env);
+      if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return await startGoogle(request, env, url);
+      if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return await finishGoogle(request, env, ctx, url);
+      if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple') return await startApple(request, env, url);
+      if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple/callback') return await finishApple(request, env, ctx, url);
+    } catch (e) {
+      const err = e as Error;
+      const traceId = request.headers.get('x-axim-trace-id');
+      log('unhandled_edge_error', { path: url.pathname, error: err.message, traceId: traceId || 'none' });
+      return json(request, env, { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected internal service error occurred' } }, 500);
     }
-
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/session') return handleSessionEndpoint(request, env);
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/identities') return listIdentitiesEndpoint(request, env);
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return startGoogle(request, env, url);
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return finishGoogle(request, env, ctx, url);
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple') return startApple(request, env, url);
-    if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple/callback') return finishApple(request, env, ctx, url);
     return json(request, env, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
   },
 };
