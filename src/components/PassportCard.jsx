@@ -51,6 +51,7 @@ function PassportCard({
   redirectUrl,
   redirectError,
   readiness,
+  connectionStatus,
   selectedMethod,
   verificationStage,
   busy,
@@ -87,7 +88,21 @@ function PassportCard({
     : 'Connect Web3 Wallet';
 
   const renderIdentities = () => {
+    if (identities === undefined) {
+      return (
+        <div className="mt-6 border-t border-slate-700/50 pt-4" aria-live="polite">
+          <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">Connected Accounts</h3>
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="animate-pulse bg-slate-800/50 rounded h-10 w-full border border-slate-700"></div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     if (!identities || identities.length === 0) return null;
+
 
     const emailIdentity = identities.find(i => i.provider === 'email' || i.provider === 'google' || i.provider === 'apple');
     const walletIdentity = identities.find(i => i.provider === 'wallet');
@@ -181,7 +196,7 @@ function PassportCard({
         <b>PHASE 01</b>
       </div>
 
-      <SecurityStatus readiness={readiness} errorWarning={error} />
+      <SecurityStatus readiness={readiness} errorWarning={error} connectionStatus={connectionStatus} />
 
       {!redirectUrl && (
         redirectError === 'The requested application is not an approved AXiM destination.' ? (
@@ -198,7 +213,7 @@ function PassportCard({
       )}
 
       {identities === undefined || (busy && !methodSelected) ? (
-      <section className="auth-options" aria-label="Loading authentication">
+      <section className="auth-options" aria-label="Loading authentication" aria-live="polite">
         {[1, 2, 3, 4].map(i => (
           <div key={i} className="animate-pulse bg-slate-800 rounded-lg h-12 w-full mb-3 shadow"></div>
         ))}

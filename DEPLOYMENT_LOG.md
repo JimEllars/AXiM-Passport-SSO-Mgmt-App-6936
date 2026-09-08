@@ -26,3 +26,10 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Set `Cache-Control: no-store` on `/api/v1/auth/*` requests.
 - Added session resiliency using `window.addEventListener('online')` to auto-recover when connectivity is restored. Token refreshes proactively trigger before expiry.
 - Improved Turnstile interaction flow to timeout in 10s and offer "Retry Verification".
+
+### Sprint 4 (Updates)
+- Added `GET /api/health` endpoint returning version, timestamp, and edge colo id.
+- Integrated Cloudflare Analytics Engine dataset `ANALYTICS` to store structured log telemetry, with a JSON payload fallback via `console.log`.
+- Updated React `passportClient.js` & `passportApi.js` to assign and propagate a unified `x-axim-correlation-id` and `x-axim-trace-id` inside standard fetch operations.
+- Modified `usePassportAuth.js` to export a resilient `connectionStatus` state ('connected' | 'reconnecting' | 'offline').
+- Built responsive UI loading skeletons for identity lists and implemented visually distinct Turnstile connection pills in `SecurityStatus.jsx`.

@@ -29,6 +29,9 @@ function usePassportAuth(redirectUrl) {
   });
   const [identities, setIdentities] = useState([]);
 
+  const [connectionStatus, setConnectionStatus] = useState('connected');
+
+
   useEffect(() => {
     // Fetch session on load
     fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
@@ -40,6 +43,7 @@ function usePassportAuth(redirectUrl) {
          if (data.authenticated) {
            localStorage.setItem('optimistic_session', JSON.stringify(data.user));
            setSession(data.user);
+           setConnectionStatus('connected');
            return fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/identities`, { credentials: 'include' });
          } else {
            localStorage.removeItem('optimistic_session');
@@ -55,14 +59,20 @@ function usePassportAuth(redirectUrl) {
       })
       .catch((e) => {
          if (e.message === 'Unauthenticated') return;
-         // Optimistic session recovery
+
          const cached = localStorage.getItem('optimistic_session');
          if (cached) {
            try {
              setSession(JSON.parse(cached));
-             // Schedule background retry with exponential backoff
+             setConnectionStatus('reconnecting');
+
              let attempt = 0;
+             const maxRetries = 5;
              const retry = () => {
+               if (attempt >= maxRetries) {
+                 setConnectionStatus('offline');
+                 return;
+               }
                attempt++;
                const backoff = Math.min(1000 * Math.pow(2, attempt), 30000);
                setTimeout(() => {
@@ -75,6 +85,7 @@ function usePassportAuth(redirectUrl) {
                      if (data.authenticated) {
                         setSession(data.user);
                         localStorage.setItem('optimistic_session', JSON.stringify(data.user));
+                        setConnectionStatus('connected');
                      } else {
                         setSession(null);
                         localStorage.removeItem('optimistic_session');
@@ -85,6 +96,8 @@ function usePassportAuth(redirectUrl) {
              };
              retry();
            } catch(err){ /* ignore */ }
+         } else {
+            setConnectionStatus('offline');
          }
       });
   }, []);
@@ -423,6 +436,7 @@ const startWallet = useCallback(async () => {
     startWallet,
     cancel,
     logout: performLogout,
+    connectionStatus,
   };
 }
 

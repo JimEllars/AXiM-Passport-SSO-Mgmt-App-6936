@@ -24,6 +24,7 @@ export interface Env {
   TURNSTILE_SECRET_KEY: string;
   WALLET_CHAIN_ID: string;
   SECURITY_AUDIT_LOGS: KVNamespace;
+  ANALYTICS?: any;
   ENVIRONMENT?: string;
   REVOCATION_KV: KVNamespace;
 }
@@ -1428,11 +1429,13 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/v1/auth/')) {
        const telemetryPayload = {
-         duration,
-         rayId: request.headers.get('cf-ray'),
-         country: request.cf?.country,
-         asn: request.cf?.asn,
-         status: response.status,
+         latencyMs: duration,
+         rayId: request.headers.get('cf-ray') || undefined,
+         country: request.cf?.country as string | undefined,
+         colo: request.cf?.colo as string | undefined,
+         clientIp: request.headers.get('CF-Connecting-IP') || undefined,
+         statusCode: response.status,
+         action: 'auth_request',
          path: url.pathname
        };
        ctx.waitUntil(dispatchCoreTelemetry(env, 'auth_request', telemetryPayload, traceId));
@@ -1515,7 +1518,21 @@ export default {
 
     if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/v1/health') {
 
-      return json(request, env, { status: 'operational', timestamp: new Date().toISOString() });
+      return json(request, env, {
+        status: 'operational',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0', // Standard placeholder or read from env
+        colo: request.cf?.colo || 'unknown'
+      });
+    }
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/health') {
+      return json(request, env, {
+        status: 'operational',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        colo: request.cf?.colo || 'unknown'
+      });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/v1/webhooks/email') {

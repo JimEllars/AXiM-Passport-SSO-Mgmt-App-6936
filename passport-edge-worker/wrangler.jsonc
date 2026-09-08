@@ -42,6 +42,12 @@
       "new_sqlite_classes": ["AuthState"]
     }
   ],
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS",
+      "dataset": "axim_passport_telemetry"
+    }
+  ],
   "triggers": {
     "crons": ["0 11 * * *"]
   },
