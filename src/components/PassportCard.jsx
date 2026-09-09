@@ -5,7 +5,7 @@ import BrandMark from './BrandMark';
 import AuthButton from './AuthButton';
 import TurnstileBox from './TurnstileBox';
 import SecurityStatus from './SecurityStatus';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 function getAppNameFromUrl(urlStr) {
   if (!urlStr) return 'AXiM Ecosystem';
@@ -76,6 +76,7 @@ function PassportCard({
   const emailFinalVerification = verificationStage === 'email-verify';
 
   const [emailInput, setEmailInput] = useState('');
+  const turnstileRef = useRef(null);
 
   const verificationCopy = walletFinalVerification
     ? 'Complete the final verification to securely verify your wallet signature.'
@@ -302,6 +303,7 @@ function PassportCard({
           )}
 
           <TurnstileBox
+            ref={turnstileRef}
             resetKey={resetKey}
             onToken={setTurnstileToken}
             onError={onVerificationError}

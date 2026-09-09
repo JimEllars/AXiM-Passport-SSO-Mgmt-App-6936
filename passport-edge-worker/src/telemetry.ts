@@ -9,6 +9,9 @@ interface TelemetryPayload {
   country?: string;
   rayId?: string;
   timestamp?: string;
+  auth_method?: string;
+  status?: string;
+  turnstile_passed?: boolean;
   [key: string]: any;
 }
 
@@ -38,31 +41,36 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
     console.log(JSON.stringify(logData));
 
     // Cloudflare Analytics Engine
-    if (env.ANALYTICS) {
+    if (env.ANALYTICS && typeof env.ANALYTICS.writeDataPoint === 'function') {
        env.ANALYTICS.writeDataPoint({
          blobs: [
            structuredPayload.action,
            structuredPayload.colo,
            structuredPayload.country,
-           traceId || ''
+           traceId || '',
+           structuredPayload.auth_method || '',
+           structuredPayload.status || ''
          ],
          doubles: [
            structuredPayload.latencyMs,
-           structuredPayload.statusCode
+           structuredPayload.statusCode,
+           structuredPayload.turnstile_passed ? 1 : 0
          ],
          indexes: [structuredPayload.rayId]
        });
     }
 
-    const url = `${env.AXIM_CORE_API_URL}/api/v1/telemetry/micro-app`;
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Axim-Signature': env.AXIM_INTERNAL_KEY,
-      },
-      body: JSON.stringify(logData),
-    });
+    if (env.AXIM_CORE_API_URL && env.AXIM_INTERNAL_KEY) {
+      const url = `${env.AXIM_CORE_API_URL}/api/v1/telemetry/micro-app`;
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Axim-Signature': env.AXIM_INTERNAL_KEY,
+        },
+        body: JSON.stringify(logData),
+      });
+    }
   } catch (err) {
     // silently fail
   }

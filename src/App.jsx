@@ -32,6 +32,13 @@ function App() {
         <span className="topbar-version">PASSPORT / 01.0</span>
       </header>
 
+      {auth.connectionStatus === 'degraded' && (
+        <div className="alert-banner error" role="alert">
+          <SafeIcon icon={FiIcons.FiAlertCircle} />
+          <span>Network connection degraded. Operating in offline-optimistic mode.</span>
+        </div>
+      )}
+
       <PassportCard
         redirectUrl={redirectState.url}
         redirectError={redirectState.error}
