@@ -1,3 +1,4 @@
+import { createErrorResponse } from "./error";
 import { dispatchCoreTelemetry } from './telemetry';
 import { EmailDispatchManager } from './emailService';
 
@@ -141,7 +142,7 @@ export class AuthState implements DurableObject {
       return Response.json({ success: true });
     }
 
-    return new Response('Invalid state operation', { status: 400 });
+    return createErrorResponse('INVALID_STATE_OPERATION', 'Invalid state operation', 400);
   }
 
   async alarm() {
@@ -776,7 +777,7 @@ async function linkWalletEndpoint(request: Request, env: Env, ctx: ExecutionCont
 async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
   const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
   if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
-    return new Response('Authentication could not be verified', { status: 403 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
   const state = crypto.randomUUID();
@@ -800,10 +801,10 @@ async function startGoogle(request: Request, env: Env, url: URL): Promise<Respon
 async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   const code = url.searchParams.get('code');
   const stateKey = url.searchParams.get('state');
-  if (!code || !stateKey) return new Response('Authentication could not be verified', { status: 403 });
+  if (!code || !stateKey) return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
 
   const state = await stateRequest(env, 'consume', `google:${stateKey}`);
-  if (!state?.codeVerifier || !state.redirectUrl) return new Response('Authentication could not be verified', { status: 403 });
+  if (!state?.codeVerifier || !state.redirectUrl) return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
 
   const response = await fetch(new URL('/auth/v1/token?grant_type=pkce', env.SUPABASE_URL), {
     method: 'POST',
@@ -812,7 +813,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
   });
   if (!response.ok) {
     await sendUnauthorizedAlert(env, ctx, 'Unknown Google User', 'Google SSO');
-    return new Response('Authentication could not be verified', { status: 403 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
   const result = await response.json<{ user?: { id?: string } }>();
@@ -821,7 +822,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
     // We'll use 'Unknown Email (Google)' or if there's an email in result.user we could use that.
     const identifier = (result.user as any)?.email || result.user?.id || 'Unknown Google User';
     await sendUnauthorizedAlert(env, ctx, identifier, 'Google SSO');
-    return new Response('Authentication could not be verified', { status: 403 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
   const userEmail = (result.user as any)?.email;
@@ -846,7 +847,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
   try {
     uuid = await resolveUniversalId(userEmail, env, 'google', result.user.id);
   } catch (error) {
-    return new Response('Authentication could not be verified', { status: 401 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 401);
   }
 
   const handoff = new URL(approvedRedir);
@@ -866,7 +867,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
 async function startApple(request: Request, env: Env, url: URL): Promise<Response> {
   const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
   if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
-    return new Response('Authentication could not be verified', { status: 403 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
   const state = crypto.randomUUID();
@@ -890,10 +891,10 @@ async function startApple(request: Request, env: Env, url: URL): Promise<Respons
 async function finishApple(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   const code = url.searchParams.get('code');
   const stateKey = url.searchParams.get('state');
-  if (!code || !stateKey) return new Response('Authentication could not be verified', { status: 403 });
+  if (!code || !stateKey) return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
 
   const state = await stateRequest(env, 'consume', `apple:${stateKey}`);
-  if (!state?.codeVerifier || !state.redirectUrl) return new Response('Authentication could not be verified', { status: 403 });
+  if (!state?.codeVerifier || !state.redirectUrl) return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
 
   const response = await fetch(new URL('/auth/v1/token?grant_type=pkce', env.SUPABASE_URL), {
     method: 'POST',
@@ -902,14 +903,14 @@ async function finishApple(request: Request, env: Env, ctx: ExecutionContext, ur
   });
   if (!response.ok) {
     await sendUnauthorizedAlert(env, ctx, 'Unknown Apple User', 'Apple SSO');
-    return new Response('Authentication could not be verified', { status: 403 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
   const result = await response.json<{ user?: { id?: string } }>();
   if (!result.user?.id) {
     const identifier = (result.user as any)?.email || result.user?.id || 'Unknown Apple User';
     await sendUnauthorizedAlert(env, ctx, identifier, 'Apple SSO');
-    return new Response('Authentication could not be verified', { status: 403 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
   const userEmail = (result.user as any)?.email;
@@ -934,7 +935,7 @@ async function finishApple(request: Request, env: Env, ctx: ExecutionContext, ur
   try {
     uuid = await resolveUniversalId(userEmail, env, 'apple', result.user.id);
   } catch (error) {
-    return new Response('Authentication could not be verified', { status: 401 });
+    return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 401);
   }
 
   const handoff = new URL(approvedRedir);
@@ -1232,7 +1233,7 @@ async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionCont
     const v1 = sigParts['v1'];
 
     if (!t || !v1) {
-      return new Response('Invalid signature format', { status: 401 });
+      return createErrorResponse('INVALID_SIGNATURE_FORMAT', 'Invalid signature format', 401);
     }
 
     const key = await crypto.subtle.importKey('raw', encoder.encode(env.EMAILIT_WEBHOOK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -1240,7 +1241,7 @@ async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionCont
     const signatureHex = Array.from(new Uint8Array(signatureBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
     if (signatureHex !== v1) {
-      return new Response('Invalid signature', { status: 401 });
+      return createErrorResponse('INVALID_SIGNATURE', 'Invalid signature', 401);
     }
   }
 
@@ -1249,7 +1250,7 @@ async function handleEmailWebhook(request: Request, env: Env, ctx: ExecutionCont
   try {
     payload = JSON.parse(rawBody);
   } catch (e) {
-    return new Response('Invalid JSON', { status: 400 });
+    return createErrorResponse('INVALID_JSON', 'Invalid JSON payload', 400);
   }
 
   // Normalize event
@@ -1545,14 +1546,7 @@ export default {
     if (rateLimitedPaths.includes(url.pathname)) {
       if (!checkRateLimit(ip)) {
         log('rate_limit_exceeded', { ip, path: url.pathname });
-        return new Response(JSON.stringify({ success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too Many Requests' } }), {
-          status: 429,
-          headers: {
-            ...corsHeaders(request, env),
-            ...JSON_HEADERS,
-            'Retry-After': '10'
-          }
-        });
+        return new Response(JSON.stringify({ error: true, code: 'RATE_LIMIT_EXCEEDED', message: 'Too Many Requests' }), { status: 429, headers: { ...corsHeaders(request, env), ...JSON_HEADERS, 'Retry-After': '10' } });
       }
     }
 

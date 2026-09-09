@@ -2,8 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 
 const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
-function TurnstileBox({ onToken, onError, resetKey }) {
+import { forwardRef, useImperativeHandle } from 'react';
+
+const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetKey }, ref) {
   const containerRef = useRef(null);
+  useImperativeHandle(ref, () => ({
+    resetWidget: () => {
+      if (window.turnstile && widgetRef.current !== null) {
+        window.turnstile.reset(widgetRef.current);
+      }
+    }
+  }));
   const widgetRef = useRef(null);
   const callbacksRef = useRef({ onToken, onError });
   const [status, setStatus] = useState('loading');
@@ -73,14 +82,20 @@ function TurnstileBox({ onToken, onError, resetKey }) {
               }
             }, 270000);
           },
-          'error-callback': () => fail('Security verification failed. Try again.'),
+          'error-callback': () => {
+            setStatus('error');
+            callbacksRef.current.onError('Security verification failed. It has been automatically reset.');
+            if (window.turnstile && widgetRef.current !== null) {
+              window.turnstile.reset(widgetRef.current);
+            }
+          },
           'expired-callback': () => {
             setStatus('expired');
+            callbacksRef.current.onError('Security verification expired. It has been automatically reset.');
             callbacksRef.current.onToken('');
-            // Attempt auto reset if expired manually
-             if (window.turnstile && widgetRef.current !== null) {
+            if (window.turnstile && widgetRef.current !== null) {
                  window.turnstile.reset(widgetRef.current);
-             }
+            }
           },
         });
         setStatus('ready');
@@ -127,6 +142,6 @@ function TurnstileBox({ onToken, onError, resetKey }) {
       )}
     </div>
   );
-}
+});
 
 export default TurnstileBox;

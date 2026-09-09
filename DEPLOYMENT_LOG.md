@@ -33,3 +33,11 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Updated React `passportClient.js` & `passportApi.js` to assign and propagate a unified `x-axim-correlation-id` and `x-axim-trace-id` inside standard fetch operations.
 - Modified `usePassportAuth.js` to export a resilient `connectionStatus` state ('connected' | 'reconnecting' | 'offline').
 - Built responsive UI loading skeletons for identity lists and implemented visually distinct Turnstile connection pills in `SecurityStatus.jsx`.
+
+## Release: Stability Update
+- Standardized Cloudflare Edge Worker telemetry to safely bypass unconfigured environments.
+- Enforced JSON error responses (HTTP 4xx/5xx) on Edge worker APIs.
+- Updated `TurnstileBox` widget to auto-recover and reset on token expiration and failure.
+- Implemented robust `session` recovery to handle authentication invalidation without looping and added UI Banner.
+- Cleaned up pre-commit warnings.
+- E2E Playwright tests executed successfully.
