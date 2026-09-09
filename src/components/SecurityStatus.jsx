@@ -28,7 +28,7 @@ function SecurityStatus({ readiness, errorWarning, connectionStatus }) {
   const operational = items.every((item) => item.value !== 'Blocked' && item.value !== 'Required');
 
   return (
-    <section className="flex flex-col gap-3" aria-label="Security status">
+    <section className="flex flex-col gap-3 transition-all duration-300" aria-label="Security status" aria-live="polite" role="status">
       {errorWarning && (
         <div className="flex items-center gap-2 px-3 py-2 text-sm text-amber-200 bg-amber-900/40 border border-amber-700/50 rounded backdrop-blur-md">
           <SafeIcon icon={FiAlertTriangle} />
@@ -50,7 +50,7 @@ function SecurityStatus({ readiness, errorWarning, connectionStatus }) {
               <SafeIcon icon={icon} />
               <span>{label}</span>
             </div>
-            <strong className={`text-xs ${color === 'text-emerald-400' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded w-fit mt-1' : color === 'text-amber-400' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded w-fit mt-1' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 py-0.5 rounded w-fit mt-1'}`}>
+            <strong className={`text-xs transition-colors duration-300 ${color === 'text-emerald-400' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded w-fit mt-1' : color === 'text-amber-400' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded w-fit mt-1' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 py-0.5 rounded w-fit mt-1'}`}>
               {value}
             </strong>
           </div>

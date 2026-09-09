@@ -166,18 +166,32 @@ export function publishTelemetry(event, payload = {}) {
     const traceId = safePayload.traceId || window.sessionStorage.getItem('axim_trace_id') || crypto.randomUUID();
     window.sessionStorage.setItem('axim_trace_id', traceId);
 
-    // We intentionally don't await this as telemetry should be non-blocking
-    fetch(`${workerUrl}/api/v1/telemetry`, {
+    const bodyStr = JSON.stringify({
+      event,
+      timestamp: new Date().toISOString(),
+      ...safePayload
+    });
+
+    const targetUrl = `${workerUrl}/api/v1/telemetry`;
+
+    // Attempt to use navigator.sendBeacon
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      // sendBeacon requires a Blob with type application/json to pass content-type correctly
+      // but standard sendBeacon to this endpoint might just need plain text or Blob
+      // For compatibility, we'll try sendBeacon and fallback if it fails or if we strictly need headers
+      const blob = new Blob([bodyStr], { type: 'application/json' });
+      const success = navigator.sendBeacon(targetUrl, blob);
+      if (success) return; // If true, beacon was queued successfully
+    }
+
+    // Fallback to fetch with keepalive
+    fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-axim-trace-id': traceId,
       },
-      body: JSON.stringify({
-        event,
-        timestamp: new Date().toISOString(),
-        ...safePayload
-      }),
+      body: bodyStr,
       keepalive: true,
     }).catch(() => {
       // Ignore telemetry errors silently so as not to disrupt user flow

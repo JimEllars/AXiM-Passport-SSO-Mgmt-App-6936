@@ -1293,23 +1293,27 @@ async function dispatchTelemetryUplink(env: Env, event: string, timestamp: strin
 }
 
 async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
-  const { event, timestamp, ...payload } = body;
+  try {
+    const { event, timestamp, ...payload } = body;
 
-  // Sanitize payload just in case frontend missed something
-  delete payload.token;
-  delete payload.turnstileToken;
-  delete payload.credential;
+    // Sanitize payload just in case frontend missed something
+    delete payload.token;
+    delete payload.turnstileToken;
+    delete payload.credential;
 
-  const traceId = request.headers.get('x-axim-trace-id') || undefined;
+    const traceId = request.headers.get('x-axim-trace-id') || undefined;
 
-  if (typeof event === 'string') {
-    log(event, payload as Record<string, string | number | boolean>);
+    if (typeof event === 'string') {
+      log(event, payload as Record<string, string | number | boolean>);
 
-    ctx.waitUntil(dispatchTelemetryUplink(env, event, timestamp as string, payload, traceId));
-    ctx.waitUntil(dispatchCoreTelemetry(env, event, payload, traceId));
+      ctx.waitUntil(dispatchTelemetryUplink(env, event, timestamp as string, payload, traceId));
+      ctx.waitUntil(dispatchCoreTelemetry(env, event, payload, traceId));
+    }
+  } catch (err) {
+    // silently fail to prevent 500 errors on telemetry
   }
 
-  return json(request, env, { success: true });
+  return new Response(null, { status: 202 });
 }
 
 export default {

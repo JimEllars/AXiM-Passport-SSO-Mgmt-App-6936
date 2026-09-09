@@ -41,3 +41,11 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Implemented robust `session` recovery to handle authentication invalidation without looping and added UI Banner.
 - Cleaned up pre-commit warnings.
 - E2E Playwright tests executed successfully.
+
+### Sprint 5: Telemetry & Resiliency Update
+- Upgraded the `passport-edge-worker` telemetry endpoint (`/api/v1/telemetry`) to return HTTP 202 Accepted, and encapsulated processing within a robust try-catch block to guarantee that failure during logging prevents cascading 500 errors.
+- Enhanced the React client's telemetry dispatcher (`src/services/passportApi.js`) to utilize the `navigator.sendBeacon` API for non-blocking outbound requests with a graceful fallback to `fetch` configured with `keepalive: true`.
+- Integrated comprehensive Turnstile latency telemetry within `src/hooks/usePassportAuth.js` to continuously measure security token acquisition performance.
+- Restructured `TurnstileBox.jsx` to natively support exponential backoff on expired and error callbacks, preventing the security widget from permanently blocking user logins during intermittent service degradation, complete with a clean UI retry mechanism.
+- Improved the UI component `SecurityStatus.jsx` by implementing semantic HTML attributes (`aria-live="polite"`, `role="status"`) and polished Framer-style Tailwind CSS transitions for a premium enterprise aesthetic.
+- Introduced Playwright E2E integration test suites in `tests/sandbox.spec.ts` guaranteeing that edge metrics are piped back correctly and assessing UI durability against simulated Turnstile connection faults.
