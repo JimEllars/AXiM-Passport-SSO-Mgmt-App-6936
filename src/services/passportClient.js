@@ -34,16 +34,14 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
     });
 
     if (!res.ok) {
-      const err = new Error(`Failed to consume token: ${res.statusText}`);
-      err.status = res.status;
       if (workerUrl) {
          fetch(`${workerUrl}/api/v1/telemetry`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event: 'client_network_failure', error: err.message, timestamp: new Date().toISOString() })
+            body: JSON.stringify({ event: 'client_network_failure', error: res.statusText, timestamp: new Date().toISOString() })
          }).catch(()=>{});
       }
-      throw err;
+      return { success: false, code: 'HTTP_ERROR', message: `Failed to consume token: ${res.statusText}` };
     }
 
     const data = await res.json();
@@ -78,7 +76,7 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
 
     return data;
   } catch (err) {
-    throw err;
+    return { success: false, code: 'NETWORK_ERROR', message: err.message };
   }
 }
 
@@ -239,10 +237,11 @@ export function usePassportHandoff({ workerUrl, supabaseClient }) {
  */
 export async function executeGlobalLogout({ workerUrl, supabaseClient, token }) {
   if (supabaseClient) {
-    await supabaseClient.auth.signOut();
+    await supabaseClient.auth.signOut().catch(() => {});
   }
 
-  const res = await fetch(`${workerUrl}/api/v1/auth/logout`, {
+  try {
+    const res = await fetch(`${workerUrl}/api/v1/auth/logout`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -252,10 +251,13 @@ export async function executeGlobalLogout({ workerUrl, supabaseClient, token }) 
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to execute global logout: ${res.statusText}`);
+    return { success: false, code: 'HTTP_ERROR', message: `Failed to execute global logout: ${res.statusText}` };
   }
 
   return res.json();
+  } catch (err) {
+    return { success: false, code: 'NETWORK_ERROR', message: err.message };
+  }
 }
 
 

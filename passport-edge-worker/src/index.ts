@@ -1454,6 +1454,7 @@ export default {
       newHeaders.set(key, value);
     }
     newHeaders.set('x-axim-trace-id', traceId);
+    newHeaders.set('Server-Timing', `edge;dur=${duration}`);
 
     return new Response(response.body, {
       status: response.status,

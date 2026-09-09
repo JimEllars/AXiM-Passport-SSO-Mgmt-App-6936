@@ -102,6 +102,51 @@ function usePassportAuth(redirectUrl) {
       });
   }, []);
 
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'optimistic_session') {
+        if (e.newValue) {
+          try {
+            setSession(JSON.parse(e.newValue));
+          } catch(err) { /* ignore */ }
+        } else {
+          setSession(null);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+
+  useEffect(() => {
+    if (!session || !session.exp) return;
+    const expMs = session.exp * 1000;
+    const timeUntilRefresh = expMs - Date.now() - 120000; // 2 minutes before expiration
+
+    if (timeUntilRefresh <= 0) return;
+
+    const timeoutId = setTimeout(() => {
+      fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include'
+      }).then(res => {
+        if (res.ok) {
+          fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(data => {
+               if (data.authenticated) {
+                 localStorage.setItem('optimistic_session', JSON.stringify(data.user));
+                 setSession(data.user);
+               }
+            }).catch(() => {});
+        }
+      }).catch(() => {});
+    }, timeUntilRefresh);
+
+    return () => clearTimeout(timeoutId);
+  }, [session]);
+
 const [selectedMethod, setSelectedMethod] = useState('');
   const [verificationStage, setVerificationStage] = useState('initial');
   const [pendingWallet, setPendingWallet] = useState(null);
