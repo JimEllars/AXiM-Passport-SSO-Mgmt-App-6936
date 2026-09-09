@@ -16,6 +16,7 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
   const widgetRef = useRef(null);
   const callbacksRef = useRef({ onToken, onError });
   const [status, setStatus] = useState('loading');
+  const [retryCount, setRetryCount] = useState(0);
   const [showRetry, setShowRetry] = useState(false);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
       }
     };
 
+    const startTime = Date.now();
     const renderWidget = () => {
       // 10-second fallback if widget doesn't verify
       fallbackTimeoutId = window.setTimeout(() => {
@@ -71,6 +73,8 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
           theme: 'dark',
           action: 'passport_auth',
           callback: (token) => {
+            const latency = Date.now() - startTime;
+            callbacksRef.current.onToken(token, latency);
             setStatus('verified');
             callbacksRef.current.onToken(token);
 
@@ -84,15 +88,23 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
           },
           'error-callback': () => {
             setStatus('error');
-            callbacksRef.current.onError('Security verification failed. It has been automatically reset.');
-            if (window.turnstile && widgetRef.current !== null) {
-              window.turnstile.reset(widgetRef.current);
+            const retries = retryCount;
+            if (retries < 3) {
+              const backoff = Math.pow(2, retries) * 1000;
+              setTimeout(() => {
+                setRetryCount(r => r + 1);
+                if (window.turnstile && widgetRef.current !== null) {
+                  window.turnstile.reset(widgetRef.current);
+                }
+              }, backoff);
+            } else {
+              callbacksRef.current.onError('Security verification failed. Please refresh the page.');
             }
           },
           'expired-callback': () => {
             setStatus('expired');
-            callbacksRef.current.onError('Security verification expired. It has been automatically reset.');
-            callbacksRef.current.onToken('');
+            callbacksRef.current.onError('Security verification expired. It has been automatically reset.', true);
+            callbacksRef.current.onToken('', null);
             if (window.turnstile && widgetRef.current !== null) {
                  window.turnstile.reset(widgetRef.current);
             }
@@ -138,7 +150,10 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
         <p className="turnstile-status">Verification expired. Complete it again.</p>
       )}
       {status === 'error' && (
-        <p className="turnstile-status">Verification unavailable. Refresh and try again.</p>
+        <div className="flex flex-col items-center">
+          <p className="turnstile-status text-rose-400 mb-2">Verification unavailable.</p>
+          <button onClick={() => { setRetryCount(0); setStatus('loading'); if (window.turnstile && widgetRef.current !== null) window.turnstile.reset(widgetRef.current); }} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white text-xs rounded border border-slate-600 transition-colors">Retry Verification</button>
+        </div>
       )}
     </div>
   );

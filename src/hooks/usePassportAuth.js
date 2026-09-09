@@ -105,7 +105,14 @@ function usePassportAuth(redirectUrl) {
 const [selectedMethod, setSelectedMethod] = useState('');
   const [verificationStage, setVerificationStage] = useState('initial');
   const [pendingWallet, setPendingWallet] = useState(null);
-  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileToken, setTurnstileTokenState] = useState('');
+
+  const setTurnstileToken = useCallback((token, latency) => {
+    setTurnstileTokenState(token);
+    if (token && latency) {
+      publishTelemetry('turnstile_token_acquired', { latencyMs: latency });
+    }
+  }, []);
   const [resetKey, setResetKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -414,7 +421,13 @@ const startWallet = useCallback(async () => {
     setResetKey((value) => value + 1);
   }, []);
 
-  const handleTurnstileError = useCallback((message) => {
+  const handleTurnstileError = useCallback((message, isTransient = false) => {
+    setTurnstileTokenState('');
+    if (!isTransient) {
+      setError(message || 'Security verification failed. Try again.');
+      publishTelemetry('turnstile_error', { error: message });
+    }
+
     setTurnstileToken('');
     setError(message || 'Security verification failed. Try again.');
   }, []);
