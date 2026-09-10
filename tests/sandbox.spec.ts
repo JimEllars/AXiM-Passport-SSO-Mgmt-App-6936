@@ -106,7 +106,6 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
     // Since telemetry is fire-and-forget, it might race with the DOM update
     // We just need to make sure it was fired at some point, or we will wait for it briefly if not yet true
     if (!telemetryInitiated) {
-       await page.waitForTimeout(500);
     }
   });
 
@@ -240,7 +239,6 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
       if (route.request().url().includes('/api/health') || route.request().url().includes('/api/v1/health')) {
         await route.fulfill({ status: 200, body: '{}' });
       } else if (route.request().url().includes('/api/v1/auth/session')) {
-        await route.fulfill({ status: 200, body: JSON.stringify({ authenticated: false }) });
       } else {
         await route.continue();
       }
@@ -272,4 +270,24 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
     const text2 = await page2.evaluate(() => document.body.innerText);
     // As long as it didn't crash and we can see something
     expect(text2.length).toBeGreaterThan(0);
+  });
+
+  test('UI components render valid ARIA attributes and skeleton loaders', async ({ page }) => {
+    // Intercept session to delay or mock loading state
+    await page.route('**/api/v1/auth/session', async route => {
+      // Don't fulfill immediately to keep skeleton loading state
+      setTimeout(async () => { await route.fulfill({ status: 200, body: JSON.stringify({ authenticated: false }) }).catch(()=> {}); }, 1500);
+    });
+
+    await page.goto('/?redirect=https://example.com');
+
+    // Check for skeletons
+    const skeletonLoaders = page.locator('.animate-pulse');
+    await expect(skeletonLoaders.first()).toBeVisible({ timeout: 10000 });
+
+    // Check for ARIA attributes
+    const securityStatus = page.locator('section[aria-label="Security status"]');
+    await expect(securityStatus).toBeVisible();
+    await expect(securityStatus).toHaveAttribute('role', 'status');
+    await expect(securityStatus).toHaveAttribute('aria-live', 'polite');
   });
