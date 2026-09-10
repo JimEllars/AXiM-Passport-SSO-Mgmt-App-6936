@@ -47,9 +47,10 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
       fallbackTimeoutId = window.setTimeout(() => {
         if (status === 'loading' || !window.turnstile) {
           setShowRetry(true);
-          fail('Cloudflare security verification stalled.');
+          setStatus('error');
+          // intentionally NOT calling fail() so we don't break the top-level UI and just show the inline retry button
         }
-      }, 10000);
+      }, 5000);
 
       if (cancelled) {
         return;

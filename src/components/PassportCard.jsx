@@ -88,6 +88,36 @@ function PassportCard({
     ? 'Verify wallet signature'
     : 'Connect Web3 Wallet';
 
+
+const CopyableId = ({ text, children }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <span
+      onClick={handleCopy}
+      className="relative group cursor-pointer flex items-center gap-1 hover:text-white transition-colors"
+      title="Copy to clipboard"
+      aria-label="Copy identifier"
+    >
+      {children}
+      {copied ? <SafeIcon icon={FiCheckCircle} className="text-emerald-400 w-3 h-3" /> : <SafeIcon icon={FiPlusCircle} className="opacity-0 group-hover:opacity-100 transition-opacity w-3 h-3" />}
+      {copied && (
+        <span className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-xs text-white px-2 py-1 rounded shadow-lg">
+          Copied!
+        </span>
+      )}
+    </span>
+  );
+};
+
   const renderIdentities = () => {
     if (identities === undefined) {
       return (
@@ -116,8 +146,8 @@ function PassportCard({
         <div className="space-y-2">
           {emailIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
-              <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiMail} /> {emailIdentity.identifier}</span>
-              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Verified</span>
+              <CopyableId text={emailIdentity.identifier}><span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiMail} /> {emailIdentity.identifier}</span></CopyableId>
+              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onEmail}>
@@ -128,8 +158,8 @@ function PassportCard({
 
           {walletIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
-              <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiHexagon} /> {walletIdentity.identifier.slice(0,6)}...{walletIdentity.identifier.slice(-4)}</span>
-              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Linked</span>
+              <CopyableId text={walletIdentity.identifier}><span className="flex items-center gap-2 text-slate-300 font-mono"><SafeIcon icon={FiHexagon} /> {walletIdentity.identifier.slice(0,6)}...{walletIdentity.identifier.slice(-4)}</span></CopyableId>
+              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onLinkWallet}>
@@ -141,7 +171,7 @@ function PassportCard({
           {googleIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
               <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiGlobe} /> Google Account</span>
-              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Connected</span>
+              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onGoogle}>
@@ -153,7 +183,7 @@ function PassportCard({
           {appleIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
               <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiSmartphone} /> Apple Account</span>
-              <span className="text-emerald-400 flex items-center gap-1 text-xs"><SafeIcon icon={FiCheckCircle} /> Connected</span>
+              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onApple}>
