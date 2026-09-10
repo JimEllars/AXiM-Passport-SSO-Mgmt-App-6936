@@ -21,17 +21,24 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
   const structuredPayload = {
     timestamp: payload.timestamp || new Date().toISOString(),
     environment: env.ENVIRONMENT || 'production',
+    userIdHash: payload.userId ? (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload.userId))).toString() : 'anonymous',
+    tenantId: 'axim_core',
     userId: payload.userId || 'anonymous',
     clientAppId: payload.clientAppId || 'axim-passport-sso',
     status: payload.status || (payload.statusCode ? payload.statusCode.toString() : '200'),
     latencyMs: payload.latencyMs || payload.duration || 0,
     cfRay: payload.rayId || 'unknown',
 
-    // Legacy fields mapped for backward compatibility
+    eventType: eventType,
+    durationMs: payload.latencyMs || payload.duration || 0,
+    errorCode: payload.errorCode || (payload.statusCode && payload.statusCode >= 400 ? payload.statusCode.toString() : ''),
+    userAgentHash: payload.userAgent ? (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload.userAgent))).toString() : 'unknown',
+    ipCountry: payload.country || 'unknown',
+    xCorrelationId: payload.correlationId || traceId || '',
+
     rayId: payload.rayId || 'unknown',
     clientIp: payload.clientIp || 'unknown',
     colo: payload.colo || 'unknown',
-    country: payload.country || 'unknown',
     action: payload.action || eventType,
     statusCode: payload.statusCode || 200,
     ...payload,
@@ -41,21 +48,46 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
     const logData = {
       timestamp: structuredPayload.timestamp,
       environment: structuredPayload.environment,
+      eventType: eventType,
+      userIdHash: structuredPayload.userIdHash,
+      tenantId: structuredPayload.tenantId,
+      durationMs: structuredPayload.durationMs,
+      status: structuredPayload.status,
+      errorCode: structuredPayload.errorCode,
+      userAgentHash: structuredPayload.userAgentHash,
+      ipCountry: structuredPayload.ipCountry,
       userId: structuredPayload.userId,
       clientAppId: structuredPayload.clientAppId,
-      status: structuredPayload.status,
       latencyMs: structuredPayload.latencyMs,
       cfRay: structuredPayload.cfRay,
       app_id: 'axim-passport-sso',
-      event_type: eventType,
       payload: structuredPayload,
       trace_id: traceId,
+      correlation_id: structuredPayload.xCorrelationId,
     };
 
-    // Fallback structured logger (Cloudflare Logpush compatible)
     console.log(JSON.stringify(logData));
 
-    // Cloudflare Analytics Engine
+    if (env.PASSPORT_ANALYTICS && typeof env.PASSPORT_ANALYTICS.writeDataPoint === 'function') {
+        env.PASSPORT_ANALYTICS.writeDataPoint({
+            blobs: [
+                eventType,
+                structuredPayload.userIdHash,
+                structuredPayload.tenantId,
+                structuredPayload.status,
+                structuredPayload.errorCode,
+                structuredPayload.userAgentHash,
+                structuredPayload.ipCountry,
+                structuredPayload.xCorrelationId,
+                traceId || ''
+            ],
+            doubles: [
+                structuredPayload.durationMs
+            ],
+            indexes: [structuredPayload.cfRay]
+        });
+    }
+
     if (env.ANALYTICS && typeof env.ANALYTICS.writeDataPoint === 'function') {
        env.ANALYTICS.writeDataPoint({
          blobs: [
@@ -87,6 +119,5 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
       });
     }
   } catch (err) {
-    // silently fail
   }
 }

@@ -19,10 +19,20 @@ function Sandbox() {
   const [showLegacyLogin, setShowLegacyLogin] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [events, setEvents] = useState([]);
 
   useEffect(() => {
     const handleStorage = () => {
       const trace = window.sessionStorage.getItem('axim_trace_id');
+      const latestEvent = window.sessionStorage.getItem('axim_latest_event');
+      if (latestEvent) {
+          try {
+             const parsed = JSON.parse(latestEvent);
+             if (!events.some(e => e.id === parsed.id)) {
+                 setEvents(prev => [...prev.slice(-4), parsed]);
+             }
+          } catch(e) { /* ignore */ }
+      }
       if (trace && !logs.includes(trace)) {
         setLogs(prev => [...prev.slice(-4), trace]);
       }
@@ -212,10 +222,10 @@ function Sandbox() {
         </h3>
 
         <div style={{ marginTop: '1rem' }}>
-          <strong style={{ color: '#94a3b8' }}>Recent Trace IDs:</strong>
+          <strong style={{ color: '#94a3b8' }}>Recent Trace IDs & Events:</strong>
           {logs.length === 0 ? <p style={{ color: '#475569', fontSize: '12px' }}>No traces yet...</p> :
             <ul style={{ paddingLeft: '1rem', color: '#cbd5e1', fontSize: '12px' }}>
-              {logs.map((log, i) => <li key={i}>{log}</li>)}
+              {events.length > 0 ? events.map((e, i) => <li key={i}>{e.event} - {e.traceId || e.id}</li>) : logs.map((log, i) => <li key={i}>{log}</li>)}
             </ul>
           }
         </div>

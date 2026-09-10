@@ -198,7 +198,24 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
     }
   });
 
-  test('Turnstile Challenge Retry Resiliency', async ({ page }) => {
+  test('Proper 401 handling when expired tokens are refreshed', async ({ page }) => {
+    // Intercept consume to return 401
+    await page.route('**/api/v1/auth/token/consume', async route => {
+        await route.fulfill({ status: 401, body: JSON.stringify({ valid: false, error: 'Token expired' }) });
+    });
+
+    await page.route('**/api/health', route => route.fulfill({ status: 200, body: '{}' }));
+    await page.route('**/api/v1/health', route => route.fulfill({ status: 200, body: '{}' }));
+
+    await page.route('**/api/v1/telemetry', async route => {
+        await route.fulfill({ status: 202 });
+    });
+
+    await page.goto('/sandbox?token=expired_token_123');
+    await expect(page.locator('text="Verified: False"')).toBeVisible({ timeout: 10000 });
+});
+
+test('Turnstile Challenge Retry Resiliency', async ({ page }) => {
     // This is a component-level test but run in E2E since Playwright handles UI
     // To mock Turnstile properly, we simulate what Turnstile does or mock the window.turnstile
     await page.addInitScript(() => {

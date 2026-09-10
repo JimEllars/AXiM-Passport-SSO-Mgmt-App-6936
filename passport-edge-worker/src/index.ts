@@ -5,6 +5,7 @@ import { EmailDispatchManager } from './emailService';
 import { verifyMessage } from 'viem';
 
 export interface Env {
+  PASSPORT_ANALYTICS?: any;
   AXIM_CORE_API_URL: string;
   AXIM_INTERNAL_KEY: string;
   EMAILIT_API_KEY: string;
@@ -254,6 +255,7 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining',
     'Access-Control-Max-Age': '86400',
+    'Access-Control-Allow-Credentials': 'true',
     Vary: 'Origin',
   });
 
@@ -1422,10 +1424,12 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const startTime = Date.now();
     const traceId = request.headers.get('x-axim-trace-id') || crypto.randomUUID();
+    const correlationId = request.headers.get('x-correlation-id') || request.headers.get('x-axim-correlation-id') || traceId;
     const req = new Request(request, {
       headers: new Headers(request.headers)
     });
     req.headers.set('x-axim-trace-id', traceId);
+    req.headers.set('x-correlation-id', correlationId);
 
     const response = await this.handleFetch(req, env, ctx);
 
@@ -1435,6 +1439,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/v1/auth/')) {
        const telemetryPayload = {
+         correlationId: correlationId,
          latencyMs: duration,
          rayId: request.headers.get('cf-ray') || undefined,
          country: request.cf?.country as string | undefined,
@@ -1455,6 +1460,7 @@ export default {
       newHeaders.set(key, value);
     }
     newHeaders.set('x-axim-trace-id', traceId);
+    newHeaders.set('x-correlation-id', correlationId);
     newHeaders.set('Server-Timing', `edge;dur=${duration}`);
 
     return new Response(response.body, {

@@ -44,6 +44,10 @@
   ],
   "analytics_engine_datasets": [
     {
+      "binding": "PASSPORT_ANALYTICS",
+      "dataset": "passport_telemetry_prod"
+    },
+    {
       "binding": "ANALYTICS",
       "dataset": "axim_passport_telemetry"
     }
