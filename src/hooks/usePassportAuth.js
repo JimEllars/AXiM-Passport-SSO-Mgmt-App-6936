@@ -36,12 +36,12 @@ function usePassportAuth(redirectUrl) {
     // Fetch session on load
     fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
       .then(res => {
-         if (!res.ok) throw new Error('Worker unreachable');
+         if (!res.ok || res.status >= 500) throw new Error('Worker unreachable');
          return res.json();
       })
       .then(data => {
          if (data.authenticated) {
-           localStorage.setItem('optimistic_session', JSON.stringify(data.user));
+           localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
            setSession(data.user);
            setConnectionStatus('connected');
            return fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/identities`, { credentials: 'include' });
@@ -84,7 +84,7 @@ function usePassportAuth(redirectUrl) {
                    .then(data => {
                      if (data.authenticated) {
                         setSession(data.user);
-                        localStorage.setItem('optimistic_session', JSON.stringify(data.user));
+                        localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
                         setConnectionStatus('connected');
                      } else {
                         setSession(null);
@@ -136,7 +136,7 @@ function usePassportAuth(redirectUrl) {
             .then(r => r.json())
             .then(data => {
                if (data.authenticated) {
-                 localStorage.setItem('optimistic_session', JSON.stringify(data.user));
+                 localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
                  setSession(data.user);
                }
             }).catch(() => {});

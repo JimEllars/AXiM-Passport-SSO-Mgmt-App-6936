@@ -261,6 +261,7 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
   if (origin) {
     const isAximSubdomain = /^https:\/\/([a-zA-Z0-9-]+\.)*axim\.us\.com(:[0-9]+)?(\/.*)?$/.test(origin);
     const isPagesDev = origin === 'https://axim-passport.pages.dev';
+    const isInternalAiAgent = origin === 'https://internal-ai-agent.axim.us.com' || origin === 'http://internal-ai-agent.axim.us.com';
 
     let isLocalhost = false;
     try {
@@ -273,7 +274,7 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
     const isFrontendOrigin = frontendOrigins(env).includes(origin);
     const isAllowedRedirectOrigin = env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin);
 
-    if (isAximSubdomain || isPagesDev || isLocalhost || isFrontendOrigin || isAllowedRedirectOrigin) {
+    if (isAximSubdomain || isPagesDev || isLocalhost || isFrontendOrigin || isAllowedRedirectOrigin || isInternalAiAgent) {
       headers.set('Access-Control-Allow-Origin', origin);
       headers.set('Access-Control-Allow-Credentials', 'true');
     }
@@ -521,7 +522,7 @@ async function consumeTokenEndpoint(request: Request, env: Env, ctx: ExecutionCo
 
   // Check expiry
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== 'number' || payload.exp < now) {
+  if (typeof payload.exp !== 'number' || payload.exp < now - 60) {
     return json(request, env, { error: 'Token expired' }, 403);
   }
 
@@ -715,7 +716,7 @@ async function verifyTokenEndpoint(request: Request, env: Env, ctx: ExecutionCon
   const payload = await verifyJwt(token, env.JWT_SECRET);
   if (!payload) return json(request, env, { valid: false, error: 'Invalid token' }, 403);
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== 'number' || payload.exp < now) return json(request, env, { valid: false, error: 'Token expired' }, 403);
+  if (typeof payload.exp !== 'number' || payload.exp < now - 60) return json(request, env, { valid: false, error: 'Token expired' }, 403);
   if (!payload.jti || typeof payload.jti !== 'string') return json(request, env, { valid: false, error: 'Invalid token' }, 403);
   const revoked = await env.REVOCATION_KV.get(`revoked:${payload.jti}`);
   if (revoked) return json(request, env, { valid: false, error: 'Token already used or revoked' }, 403);

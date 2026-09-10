@@ -50,7 +50,7 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
           setStatus('error');
           // intentionally NOT calling fail() so we don't break the top-level UI and just show the inline retry button
         }
-      }, 5000);
+      }, 10000);
 
       if (cancelled) {
         return;
