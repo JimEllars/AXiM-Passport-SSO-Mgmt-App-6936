@@ -37,6 +37,7 @@ function usePassportAuth(redirectUrl) {
     // Fetch session on load
     fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
       .then(res => {
+         if (res.status === 401) throw new Error('Unauthenticated');
          if (!res.ok || res.status >= 500) throw new Error('Worker unreachable');
          return res.json();
       })
@@ -59,7 +60,11 @@ function usePassportAuth(redirectUrl) {
          }
       })
       .catch((e) => {
-         if (e.message === 'Unauthenticated') return;
+         if (e.message === 'Unauthenticated') {
+           localStorage.removeItem('optimistic_session');
+           setSession(null);
+           return;
+         }
 
          const cached = localStorage.getItem('optimistic_session');
          if (cached) {
@@ -79,6 +84,7 @@ function usePassportAuth(redirectUrl) {
                setTimeout(() => {
                  fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
                    .then(res => {
+                     if (res.status === 401) throw new Error('Unauthenticated');
                      if (res.ok) return res.json();
                      throw new Error('Still unreachable');
                    })
@@ -92,7 +98,15 @@ function usePassportAuth(redirectUrl) {
                         localStorage.removeItem('optimistic_session');
                      }
                    })
-                   .catch(retry);
+                   .catch((err) => {
+                     if (err.message === 'Unauthenticated') {
+                        setSession(null);
+                        localStorage.removeItem('optimistic_session');
+                        setConnectionStatus('offline');
+                     } else {
+                        retry();
+                     }
+                   });
                }, backoff);
              };
              retry();
@@ -123,7 +137,7 @@ function usePassportAuth(redirectUrl) {
   useEffect(() => {
     if (!session || !session.exp) return;
     const expMs = session.exp * 1000;
-    const timeUntilRefresh = expMs - Date.now() - 60000; // 2 minutes before expiration
+    const timeUntilRefresh = expMs - Date.now() - 300000; // 5 minutes before expiration as per prompt
 
     if (timeUntilRefresh <= 0) return;
 

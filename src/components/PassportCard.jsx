@@ -271,13 +271,13 @@ const CopyableId = ({ text, children }) => {
       )}
 
       {identities === undefined || (busy && !methodSelected) ? (
-      <section className="auth-options" aria-label="Loading authentication" aria-live="polite">
+      <section className="auth-options" aria-label="Loading authentication" aria-live="polite" aria-busy="true">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="animate-pulse bg-slate-800 rounded-lg h-12 w-full mb-3 shadow"></div>
+          <div key={i} className="animate-pulse bg-slate-800/50 border border-slate-700/50 rounded-lg h-12 w-full mb-3 shadow"></div>
         ))}
       </section>
     ) : identities && identities.length > 0 ? renderIdentities() : (
-      <section className="auth-options" aria-label="Authentication options">
+      <section className="auth-options" aria-label="Authentication options" aria-live="polite" aria-busy={busy}>
         <AuthButton
           icon={FiHexagon}
           onClick={onWallet}

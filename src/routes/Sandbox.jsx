@@ -179,6 +179,22 @@ function Sandbox() {
         </button>
       )}
 
+
+      <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '4px', border: '1px solid #334155' }}>
+        <h3 style={{ margin: '0 0 1rem 0', color: '#94a3b8' }}>Simulation Controls (Dev Only)</h3>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <button onClick={() => window.location.href = '/?redirect=' + encodeURIComponent(window.location.href) + '&simulate_latency=true'} style={{ padding: '8px 12px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            Simulate Edge Latency
+          </button>
+          <button onClick={() => { localStorage.setItem('optimistic_session', JSON.stringify({ exp: Date.now() / 1000 - 3600 })); window.location.reload(); }} style={{ padding: '8px 12px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            Force Token Expiration
+          </button>
+          <button onClick={() => window.location.href = '/?redirect=' + encodeURIComponent(window.location.href) + '&fail_turnstile=true'} style={{ padding: '8px 12px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            Simulate Turnstile Failure
+          </button>
+        </div>
+      </div>
+
       {showLegacyLogin && (
         <div style={{ marginTop: '2rem', padding: '1rem', border: '1px solid #444', borderRadius: '4px', maxWidth: '400px' }}>
           <h3>Legacy Local Login</h3>

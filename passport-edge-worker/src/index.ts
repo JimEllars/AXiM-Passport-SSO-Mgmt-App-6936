@@ -1445,14 +1445,18 @@ export default {
     if (url.pathname.startsWith('/api/v1/auth/')) {
        const telemetryPayload = {
          correlationId: correlationId,
+         auth_latency_ms: duration,
          latencyMs: duration,
          rayId: request.headers.get('cf-ray') || undefined,
          country: request.cf?.country as string | undefined,
          colo: request.cf?.colo as string | undefined,
          clientIp: request.headers.get('CF-Connecting-IP') || undefined,
          statusCode: response.status,
+         status_code: response.status,
          action: 'auth_request',
-         path: url.pathname
+         path: url.pathname,
+         turnstile_verification_result: response.headers.get('x-turnstile-status') || 'bypassed',
+         auth_method: url.pathname.includes('/wallet') ? 'wallet_signature' : url.pathname.includes('/email') ? 'otp_email' : 'passkey'
        };
        ctx.waitUntil(dispatchCoreTelemetry(env, 'auth_request', telemetryPayload, traceId));
     }
@@ -1535,12 +1539,16 @@ export default {
     }
 
     if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/v1/health') {
+      const isStorageHealthy = !!env.REVOCATION_KV;
+      const isAuthHealthy = !!(env.JWT_SECRET || env.SUPABASE_JWT_SECRET);
 
       return json(request, env, {
-        status: 'operational',
+        status: (isStorageHealthy && isAuthHealthy) ? 'operational' : 'degraded',
         timestamp: new Date().toISOString(),
-        version: '1.0.0', // Standard placeholder or read from env
-        colo: request.cf?.colo || 'unknown'
+        version: '1.0.0',
+        colo: request.cf?.colo || 'unknown',
+        uptime: process.uptime ? process.uptime() : 'unknown',
+        upstream_storage: isStorageHealthy ? 'healthy' : 'unavailable'
       });
     }
 
