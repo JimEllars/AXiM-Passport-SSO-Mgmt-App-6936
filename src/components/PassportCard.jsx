@@ -5,7 +5,7 @@ import BrandMark from './BrandMark';
 import AuthButton from './AuthButton';
 import TurnstileBox from './TurnstileBox';
 import SecurityStatus from './SecurityStatus';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 function getAppNameFromUrl(urlStr) {
   if (!urlStr) return 'AXiM Ecosystem';
@@ -76,6 +76,27 @@ function PassportCard({
   const emailFinalVerification = verificationStage === 'email-verify';
 
   const [emailInput, setEmailInput] = useState('');
+  const session = (() => { try { const cached = localStorage.getItem('optimistic_session'); return cached ? JSON.parse(cached) : null; } catch { return null; } })();
+  const [sessionExpiryCountdown, setSessionExpiryCountdown] = useState(null);
+
+  useEffect(() => {
+    if (session && session.exp) {
+      const updateCountdown = () => {
+        const timeUntilRefresh = session.exp * 1000 - Date.now();
+        if (timeUntilRefresh > 0) {
+            setSessionExpiryCountdown(Math.ceil(timeUntilRefresh / 1000));
+        } else {
+            setSessionExpiryCountdown(0);
+        }
+      };
+      updateCountdown();
+      const interval = setInterval(updateCountdown, 1000);
+      return () => clearInterval(interval);
+    } else {
+        setSessionExpiryCountdown(null);
+    }
+  }, [session]);
+
   const turnstileRef = useRef(null);
 
   const verificationCopy = walletFinalVerification
@@ -221,17 +242,23 @@ const CopyableId = ({ text, children }) => {
         Sign in to continue to {appName}
       </div>
 
-      <div className="access-pill">
+      <div className="access-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
         <SafeIcon icon={FiGlobe} />
         <span>Internal access portal</span>
         <b>PHASE 01</b>
       </div>
 
       <SecurityStatus readiness={readiness} errorWarning={error} connectionStatus={connectionStatus} />
+      {sessionExpiryCountdown !== null && sessionExpiryCountdown < 300 && (
+          <div className="flex items-center gap-2 px-3 py-2 text-sm text-amber-200 bg-amber-900/40 border border-amber-700/50 rounded backdrop-blur-md mb-4 mt-2" role="status" aria-live="polite">
+            <SafeIcon icon={FiAlertCircle} />
+            <span>Session expires in {Math.floor(sessionExpiryCountdown / 60)}:{(sessionExpiryCountdown % 60).toString().padStart(2, '0')}</span>
+          </div>
+      )}
 
       {!redirectUrl && (
         redirectError === 'The requested application is not an approved AXiM destination.' ? (
-          <div className="error-message" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)', marginBottom: '24px' }}>
+          <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)', marginBottom: '24px' }}>
             <SafeIcon icon={FiAlertCircle} />
             <span style={{ fontWeight: 600 }}>SECURITY LOCKOUT: Unauthorized Application Callback</span>
           </div>
@@ -362,12 +389,12 @@ const CopyableId = ({ text, children }) => {
       </AnimatePresence>
 
       {error === 'SECURITY_LOCKOUT' ? (
-        <div className="error-message" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)' }}>
+        <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)' }}>
           <SafeIcon icon={FiAlertCircle} />
           <span style={{ fontWeight: 600 }}>SECURITY LOCKOUT: Unauthorized Ecosystem Access - Incident Logged</span>
         </div>
       ) : error ? (
-        <div className="error-message" role="alert">
+        <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" role="alert">
           <SafeIcon icon={FiAlertCircle} />
           <span>{error}</span>
         </div>

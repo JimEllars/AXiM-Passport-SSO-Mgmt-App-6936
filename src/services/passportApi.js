@@ -159,11 +159,12 @@ export function publishTelemetry(event, payload = {}) {
 
     // Filter out any potential sensitive data if it was passed by mistake
     const safePayload = { ...payload };
+    const traceId = safePayload.traceId || window.sessionStorage.getItem('axim_trace_id') || crypto.randomUUID();
+    window.sessionStorage.setItem('axim_latest_event', JSON.stringify({ id: crypto.randomUUID(), event, traceId }));
     delete safePayload.token;
     delete safePayload.turnstileToken;
     delete safePayload.credential;
 
-    const traceId = safePayload.traceId || window.sessionStorage.getItem('axim_trace_id') || crypto.randomUUID();
     window.sessionStorage.setItem('axim_trace_id', traceId);
 
     const bodyStr = JSON.stringify({

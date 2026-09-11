@@ -122,7 +122,7 @@ function usePassportAuth(redirectUrl) {
   useEffect(() => {
     if (!session || !session.exp) return;
     const expMs = session.exp * 1000;
-    const timeUntilRefresh = expMs - Date.now() - 120000; // 2 minutes before expiration
+    const timeUntilRefresh = expMs - Date.now() - 60000; // 2 minutes before expiration
 
     if (timeUntilRefresh <= 0) return;
 
