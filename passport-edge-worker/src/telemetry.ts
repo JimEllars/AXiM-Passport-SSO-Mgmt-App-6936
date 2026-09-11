@@ -1,6 +1,9 @@
 import { Env } from './index';
 
 interface TelemetryPayload {
+  auth_latency_ms?: number;
+  status_code?: number;
+  turnstile_verification_result?: string;
   action?: string;
   latencyMs?: number;
   statusCode?: number;

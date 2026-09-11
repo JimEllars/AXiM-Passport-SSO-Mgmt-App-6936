@@ -24,14 +24,26 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
   if (!token) return null;
 
   try {
-    const res = await fetch(`${workerUrl}/api/v1/auth/token/consume`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getTracingHeaders(),
-      },
-      body: JSON.stringify({ token, origin: window.location.origin }),
-    });
+    let attempt = 0;
+    const maxRetries = 3;
+    let res;
+    while (attempt <= maxRetries) {
+      try {
+        res = await fetch(`${workerUrl}/api/v1/auth/token/consume`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getTracingHeaders(),
+          },
+          body: JSON.stringify({ token, origin: window.location.origin }),
+        });
+        if (res.ok || res.status === 401 || res.status === 403 || res.status === 400) break; // Don't retry auth errors
+      } catch (err) {
+        if (attempt === maxRetries) throw err;
+      }
+      attempt++;
+      if (attempt <= maxRetries) await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt - 1)));
+    }
 
     if (!res.ok) {
       if (workerUrl) {
