@@ -168,7 +168,7 @@ const CopyableId = ({ text, children }) => {
           {emailIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
               <CopyableId text={emailIdentity.identifier}><span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiMail} /> {emailIdentity.identifier}</span></CopyableId>
-              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
+              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onEmail}>
@@ -180,7 +180,7 @@ const CopyableId = ({ text, children }) => {
           {walletIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
               <CopyableId text={walletIdentity.identifier}><span className="flex items-center gap-2 text-slate-300 font-mono"><SafeIcon icon={FiHexagon} /> {walletIdentity.identifier.slice(0,6)}...{walletIdentity.identifier.slice(-4)}</span></CopyableId>
-              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
+              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onLinkWallet}>
@@ -192,7 +192,7 @@ const CopyableId = ({ text, children }) => {
           {googleIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
               <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiGlobe} /> Google Account</span>
-              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
+              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onGoogle}>
@@ -204,7 +204,7 @@ const CopyableId = ({ text, children }) => {
           {appleIdentity ? (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700">
               <span className="flex items-center gap-2 text-slate-300"><SafeIcon icon={FiSmartphone} /> Apple Account</span>
-              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
+              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 text-xs font-semibold tracking-wide" role="status" aria-live="polite"><SafeIcon icon={FiCheckCircle} /> Active</span>
             </div>
           ) : (
             <div className="flex items-center justify-between bg-slate-800/50 rounded p-2 text-sm border border-slate-700 border-dashed cursor-pointer hover:bg-slate-700/50" onClick={onApple}>

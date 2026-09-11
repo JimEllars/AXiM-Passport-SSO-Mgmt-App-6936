@@ -71,7 +71,7 @@ function SecurityStatus({ readiness, errorWarning, connectionStatus }) {
               <SafeIcon icon={icon} />
               <span>{label}</span>
             </div>
-            <strong className={`text-xs transition-colors duration-300 ${color === 'text-emerald-400' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded w-fit mt-1' : color === 'text-amber-400' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded w-fit mt-1' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 py-0.5 rounded w-fit mt-1'}`}>
+            <strong className={`text-xs transition-colors duration-300 ${color === 'text-emerald-400' ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded w-fit mt-1 flex items-center gap-1.5 shadow-[0_0_8px_rgba(16,185,129,0.15)] relative before:absolute before:-left-1 before:top-1.5 before:w-1.5 before:h-1.5 before:bg-emerald-400 before:rounded-full before:animate-pulse' : color === 'text-amber-400' ? 'bg-amber-500/20 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded w-fit mt-1 flex items-center gap-1.5 shadow-[0_0_8px_rgba(245,158,11,0.15)] relative before:absolute before:-left-1 before:top-1.5 before:w-1.5 before:h-1.5 before:bg-amber-400 before:rounded-full before:animate-pulse' : 'bg-rose-500/20 border border-rose-500/30 text-rose-400 px-2 py-0.5 rounded w-fit mt-1 flex items-center gap-1.5 shadow-[0_0_8px_rgba(244,63,94,0.15)] relative before:absolute before:-left-1 before:top-1.5 before:w-1.5 before:h-1.5 before:bg-rose-400 before:rounded-full'}`}>
               {value}
             </strong>
           </div>

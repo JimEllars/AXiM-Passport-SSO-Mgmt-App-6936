@@ -251,9 +251,9 @@ function frontendOrigins(env: Env): string[] {
 
 function corsHeaders(request: Request, env: Env): HeadersInit {
   const headers = new Headers({
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-axim-trace-id, x-correlation-id',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+    'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, x-axim-trace-id, x-correlation-id',
     'Access-Control-Max-Age': '86400',
     'Access-Control-Allow-Credentials': 'true',
     Vary: 'Origin',
@@ -637,11 +637,12 @@ async function logoutEndpoint(request: Request, env: Env, body: Record<string, u
   }
 
   // Add token JTI to REVOCATION_KV with TTL matching remaining lifetime
-  if (payload.jti) {
+  if (payload.jti || token) {
     const now = Math.floor(Date.now() / 1000);
     const exp = typeof payload.exp === 'number' ? payload.exp : now + 3600;
     const ttl = Math.max(60, exp - now);
-    await env.REVOCATION_KV.put(`revoked:${payload.jti}`, '1', { expirationTtl: ttl });
+    const revocationKey = payload.jti ? `revoked:${payload.jti}` : `revoked:${token}`;
+    await env.REVOCATION_KV.put(revocationKey, '1', { expirationTtl: ttl });
   }
 
   await stateRequest(env, 'logout', payload.sub);
@@ -1307,16 +1308,20 @@ async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext
     const traceId = request.headers.get('x-axim-trace-id') || undefined;
 
     if (typeof event === 'string') {
-      log(event, payload as Record<string, string | number | boolean>);
-
-      ctx.waitUntil(dispatchTelemetryUplink(env, event, timestamp as string, payload, traceId));
-      ctx.waitUntil(dispatchCoreTelemetry(env, event, payload, traceId));
+      // Execute non-blocking telemetry logging
+      ctx.waitUntil((async () => {
+         try {
+           log(event, payload as Record<string, string | number | boolean>);
+           await dispatchTelemetryUplink(env, event, timestamp as string, payload, traceId);
+           await dispatchCoreTelemetry(env, event, payload, traceId);
+         } catch(e) {}
+      })());
     }
   } catch (err) {
     // silently fail to prevent 500 errors on telemetry
   }
 
-  return new Response(null, { status: 202 });
+  return new Response(null, { status: 202, headers: { ...corsHeaders(request, env), ...JSON_HEADERS } });
 }
 
 export default {

@@ -63,6 +63,7 @@ export async function consumeTokenAndCleanUrl({ workerUrl, supabaseClient }) {
     }
 
     if (data.valid) {
+      trackEvent('session_established');
       if (supabaseClient) {
         await supabaseClient.auth.setSession({
           access_token: data.supabase_access_token,
@@ -350,5 +351,48 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
     }
   } catch (e) {
     if (onUnauthenticated) onUnauthenticated();
+  }
+}
+
+/**
+ * Dispatches non-blocking telemetry events to the Passport Edge Worker.
+ * Attempts to use navigator.sendBeacon, falling back to fetch with keepalive.
+ *
+ * @param {string} eventName - The name of the event to track.
+ * @param {Object} metadata - Additional metadata for the event.
+ */
+export function trackEvent(eventName, metadata = {}) {
+  try {
+    const workerUrl = import.meta.env.VITE_PASSPORT_EDGE_URL || 'https://passport.axim.us.com';
+    const url = `${workerUrl}/api/v1/telemetry`;
+    const traceId = crypto.randomUUID();
+
+    const payload = {
+      event: eventName,
+      timestamp: new Date().toISOString(),
+      traceId,
+      ...metadata
+    };
+
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+
+    // Try sendBeacon for non-blocking outbound requests
+    if (navigator.sendBeacon) {
+      const success = navigator.sendBeacon(url, blob);
+      if (success) return;
+    }
+
+    // Fallback to fetch with keepalive
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-axim-trace-id': traceId
+      },
+      body: JSON.stringify(payload),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) {
+    // Fail silently on telemetry errors
   }
 }

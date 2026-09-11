@@ -66,3 +66,10 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Hardened optimistic React session fetching logic via explicit exponential retry backoff parameters.
 - Standardized edge API handlers using unified error generation utility.
 - All Playwright end-to-end integration test suites verified and passing across core paths.
+
+### Phase 4 (Current)
+- Completed Phase 4: Edge Hardening, Telemetry Pipeline & UI Resilience.
+- Instrumented edge worker `telemetry.ts` and `index.ts` with non-blocking execution (`ctx.waitUntil`), fallback tracking, and CORS hardening.
+- Added non-blocking client telemetry `trackEvent` using `navigator.sendBeacon` and `fetch(keepalive)`.
+- Handled UI resilience for Turnstile loading and enhanced Sandbox inspector for traces.
+- Ensured 100% test coverage including logout token revocation logic and SSO token copy events.

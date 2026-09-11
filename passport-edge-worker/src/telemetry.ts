@@ -24,7 +24,7 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
     userIdHash: payload.userId ? (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload.userId))).toString() : 'anonymous',
     tenantId: 'axim_core',
     userId: payload.userId || 'anonymous',
-    clientAppId: payload.clientAppId || 'axim-passport-sso',
+    clientId: payload.clientId || payload.clientAppId || 'axim-passport-sso',
     status: payload.status || (payload.statusCode ? payload.statusCode.toString() : '200'),
     latencyMs: payload.latencyMs || payload.duration || 0,
     cfRay: payload.rayId || 'unknown',
@@ -57,7 +57,7 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
       userAgentHash: structuredPayload.userAgentHash,
       ipCountry: structuredPayload.ipCountry,
       userId: structuredPayload.userId,
-      clientAppId: structuredPayload.clientAppId,
+      clientId: structuredPayload.clientId,
       latencyMs: structuredPayload.latencyMs,
       cfRay: structuredPayload.cfRay,
       app_id: 'axim-passport-sso',
@@ -66,58 +66,75 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
       correlation_id: structuredPayload.xCorrelationId,
     };
 
-    console.log(JSON.stringify(logData));
 
-    if (env.PASSPORT_ANALYTICS && typeof env.PASSPORT_ANALYTICS.writeDataPoint === 'function') {
-        env.PASSPORT_ANALYTICS.writeDataPoint({
-            blobs: [
-                eventType,
-                structuredPayload.userIdHash,
-                structuredPayload.tenantId,
-                structuredPayload.status,
-                structuredPayload.errorCode,
-                structuredPayload.userAgentHash,
-                structuredPayload.ipCountry,
-                structuredPayload.xCorrelationId,
-                traceId || ''
-            ],
-            doubles: [
-                structuredPayload.durationMs
-            ],
-            indexes: [structuredPayload.cfRay]
+    try {
+      if (env.PASSPORT_ANALYTICS && typeof env.PASSPORT_ANALYTICS.writeDataPoint === 'function') {
+          env.PASSPORT_ANALYTICS.writeDataPoint({
+              blobs: [
+                  eventType,
+                  structuredPayload.userIdHash,
+                  structuredPayload.tenantId,
+                  structuredPayload.status,
+                  structuredPayload.errorCode,
+                  structuredPayload.userAgentHash,
+                  structuredPayload.ipCountry,
+                  structuredPayload.xCorrelationId,
+                  traceId || ''
+              ],
+              doubles: [
+                  structuredPayload.durationMs
+              ],
+              indexes: [structuredPayload.cfRay]
+          });
+      }
+    } catch (e) {
+      console.log(JSON.stringify({ type: 'analytics_error', error: (e as Error).message, data: logData }));
+    }
+
+    try {
+      if (env.ANALYTICS && typeof env.ANALYTICS.writeDataPoint === 'function') {
+         env.ANALYTICS.writeDataPoint({
+           blobs: [
+             structuredPayload.action,
+             structuredPayload.colo,
+             structuredPayload.country,
+             traceId || '',
+             structuredPayload.auth_method || '',
+             structuredPayload.status || ''
+           ],
+           doubles: [
+             structuredPayload.latencyMs,
+             structuredPayload.statusCode,
+             structuredPayload.turnstile_passed ? 1 : 0
+           ],
+           indexes: [structuredPayload.cfRay]
+         });
+      }
+    } catch (e) {
+      console.log(JSON.stringify({ type: 'analytics_error', error: (e as Error).message, data: logData }));
+    }
+
+    if (!env.PASSPORT_ANALYTICS && !env.ANALYTICS) {
+       console.log(JSON.stringify(logData));
+    }
+
+    try {
+      if (env.AXIM_CORE_API_URL && env.AXIM_INTERNAL_KEY) {
+        const url = `${env.AXIM_CORE_API_URL}/api/v1/telemetry/micro-app`;
+        await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Axim-Signature': env.AXIM_INTERNAL_KEY,
+          },
+          body: JSON.stringify(logData),
         });
-    }
-
-    if (env.ANALYTICS && typeof env.ANALYTICS.writeDataPoint === 'function') {
-       env.ANALYTICS.writeDataPoint({
-         blobs: [
-           structuredPayload.action,
-           structuredPayload.colo,
-           structuredPayload.country,
-           traceId || '',
-           structuredPayload.auth_method || '',
-           structuredPayload.status || ''
-         ],
-         doubles: [
-           structuredPayload.latencyMs,
-           structuredPayload.statusCode,
-           structuredPayload.turnstile_passed ? 1 : 0
-         ],
-         indexes: [structuredPayload.cfRay]
-       });
-    }
-
-    if (env.AXIM_CORE_API_URL && env.AXIM_INTERNAL_KEY) {
-      const url = `${env.AXIM_CORE_API_URL}/api/v1/telemetry/micro-app`;
-      await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Axim-Signature': env.AXIM_INTERNAL_KEY,
-        },
-        body: JSON.stringify(logData),
-      });
+      }
+    } catch (e) {
+       // Silent catch for external API failure
     }
   } catch (err) {
+    // Top level failsafe
+    console.log(JSON.stringify({ error: (err as Error).message, originalEventType: eventType }));
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { extractHandoffToken, consumeTokenAndCleanUrl, executePassportRedirect } from '../services/passportClient';
+import { extractHandoffToken, consumeTokenAndCleanUrl, executePassportRedirect, trackEvent } from '../services/passportClient';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -20,6 +20,7 @@ function Sandbox() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logs, setLogs] = useState([]);
   const [events, setEvents] = useState([]);
+  const [copiedToken, setCopiedToken] = useState(false);
 
   useEffect(() => {
     const handleStorage = () => {
@@ -192,10 +193,36 @@ function Sandbox() {
 
       {result && (
         <div style={{ marginTop: '2rem', backgroundColor: '#111', padding: '1rem', borderRadius: '4px' }}>
-          <h2 style={{ color: '#00ffcc' }}>Authentication Success!</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ color: '#00ffcc', margin: 0 }}>Authentication Success!</h2>
+            {result.supabase_access_token && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(result.supabase_access_token);
+                  setCopiedToken(true);
+                  trackEvent('sso_token_copied');
+                  setTimeout(() => setCopiedToken(false), 2000);
+                }}
+                style={{
+                  padding: '5px 10px', backgroundColor: copiedToken ? '#10b981' : '#333',
+                  color: '#fff', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer',
+                  fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {copiedToken ? 'Copied!' : 'Copy SSO Token'}
+              </button>
+            )}
+          </div>
           <p>Verified: {result.valid ? 'True' : 'False'}</p>
           {result.exp && <p>Expires: {new Date(result.exp * 1000).toLocaleString()}</p>}
-          <pre>{JSON.stringify(result, null, 2)}</pre>
+          <details style={{ marginTop: '1rem', border: '1px solid #333', borderRadius: '4px', padding: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', color: '#888', userSelect: 'none' }}>Inspector: Response Payload & Latency</summary>
+            <div style={{ marginTop: '10px', fontSize: '12px', color: '#ccc' }}>
+              <p><strong>Latency:</strong> {result.latencyMs ? `${result.latencyMs}ms` : 'N/A'}</p>
+              <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto' }}>{JSON.stringify(result, null, 2)}</pre>
+            </div>
+          </details>
         </div>
       )}
       {/* Live Telemetry & Diagnostics Drawer */}
