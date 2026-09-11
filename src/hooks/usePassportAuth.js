@@ -10,6 +10,7 @@ import {
   checkWorkerHealth,
   logout as apiLogout,
 } from '../services/passportApi';
+import { trackEvent } from '../services/passportClient';
 import { createClient } from '@supabase/supabase-js';
 import { getWalletAccount, signWalletChallenge } from '../services/walletAuth';
 
@@ -154,8 +155,11 @@ const [selectedMethod, setSelectedMethod] = useState('');
 
   const setTurnstileToken = useCallback((token, latency) => {
     setTurnstileTokenState(token);
-    if (token && latency) {
-      publishTelemetry('turnstile_token_acquired', { latencyMs: latency });
+    if (token) {
+      trackEvent('turnstile_completed');
+      if (latency) {
+        publishTelemetry('turnstile_token_acquired', { latencyMs: latency });
+      }
     }
   }, []);
   const [resetKey, setResetKey] = useState(0);
@@ -227,6 +231,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
         return;
       }
 
+      trackEvent('auth_initiated', { method: 'google' });
       window.location.assign(getGoogleAuthUrl(redirectUrl, turnstileToken));
     } catch (authenticationError) {
       if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
@@ -259,6 +264,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
         return;
       }
 
+      trackEvent('auth_initiated', { method: 'apple' });
       window.location.assign(getAppleAuthUrl(redirectUrl, turnstileToken));
     } catch (authenticationError) {
       if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
@@ -310,6 +316,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
       setBusy(true);
 
       const startTime = Date.now();
+      trackEvent('auth_initiated', { method: 'email' });
       const res = await startEmailOtp(email, redirectUrl, turnstileToken);
       const latency = Date.now() - startTime;
       if (res.traceId) window.sessionStorage.setItem('axim_trace_id', res.traceId);
@@ -336,6 +343,7 @@ const startWallet = useCallback(async () => {
 
       if (!pendingWallet) {
         const wallet = await getWalletAccount();
+        trackEvent('auth_initiated', { method: 'wallet' });
         const challenge = await requestWalletChallenge({
           address: wallet.address,
           chainId: wallet.chainId,
@@ -399,6 +407,7 @@ const startWallet = useCallback(async () => {
 
   const performLogout = useCallback(async () => {
     setBusy(true);
+    trackEvent('user_logout');
     // Grab any existing token from local storage or wherever the frontend stores it
     const storedToken = localStorage.getItem('passport_token');
     if (storedToken) {
@@ -467,6 +476,7 @@ const startWallet = useCallback(async () => {
   }, []);
 
   const handleTurnstileError = useCallback((message, isTransient = false) => {
+    trackEvent('turnstile_failed', { error: message, isTransient });
     setTurnstileTokenState('');
     if (!isTransient) {
       setError(message || 'Security verification failed. Try again.');
