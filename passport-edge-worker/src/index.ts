@@ -64,7 +64,8 @@ const SECURITY_HEADERS = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'strict-origin-when-cross-origin'
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Content-Security-Policy': "default-src 'self'"
 };
 
 const ipRequestCounts = new Map<string, { count: number; expiresAt: number }>();
@@ -1443,6 +1444,14 @@ export default {
     // Log structured telemetry on every auth attempt (or all requests handled by fetch)
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/v1/auth/')) {
+       let authMethod = 'unknown';
+       if (url.pathname.includes('/wallet')) authMethod = 'wallet';
+       else if (url.pathname.includes('/email')) authMethod = 'email_otp';
+       else if (url.pathname.includes('/session') || url.pathname.includes('/refresh')) authMethod = 'session_refresh';
+       else if (url.pathname.includes('/google')) authMethod = 'google';
+       else if (url.pathname.includes('/apple')) authMethod = 'apple';
+       else if (url.pathname.includes('/verify') || url.pathname.includes('/token/consume')) authMethod = 'passkey';
+
        const telemetryPayload = {
          correlationId: correlationId,
          auth_latency_ms: duration,
@@ -1451,12 +1460,13 @@ export default {
          country: request.cf?.country as string | undefined,
          colo: request.cf?.colo as string | undefined,
          clientIp: request.headers.get('CF-Connecting-IP') || undefined,
+         userAgent: request.headers.get('User-Agent') || 'unknown',
          statusCode: response.status,
          status_code: response.status,
          action: 'auth_request',
          path: url.pathname,
          turnstile_verification_result: response.headers.get('x-turnstile-status') || 'bypassed',
-         auth_method: url.pathname.includes('/wallet') ? 'wallet_signature' : url.pathname.includes('/email') ? 'otp_email' : 'passkey'
+         auth_method: authMethod
        };
        ctx.waitUntil(dispatchCoreTelemetry(env, 'auth_request', telemetryPayload, traceId));
     }
@@ -1547,7 +1557,7 @@ export default {
         timestamp: new Date().toISOString(),
         version: '1.0.0',
         colo: request.cf?.colo || 'unknown',
-        uptime: process.uptime ? process.uptime() : 'unknown',
+        uptime: 'unknown',
         upstream_storage: isStorageHealthy ? 'healthy' : 'unavailable'
       });
     }
@@ -1616,7 +1626,7 @@ export default {
       const err = e as Error;
       const traceId = request.headers.get('x-axim-trace-id');
       log('unhandled_edge_error', { path: url.pathname, error: err.message, traceId: traceId || 'none' });
-      return json(request, env, { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected internal service error occurred' } }, 500);
+      return createErrorResponse('INTERNAL_SERVER_ERROR', 'An unexpected internal service error occurred', 500);
     }
     return json(request, env, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
   },

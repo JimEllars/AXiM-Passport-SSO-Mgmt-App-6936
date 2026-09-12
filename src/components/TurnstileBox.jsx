@@ -4,7 +4,7 @@ const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
 import { forwardRef, useImperativeHandle } from 'react';
 
-const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetKey }, ref) {
+const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetKey, onStatusChange }, ref) {
   const containerRef = useRef(null);
   useImperativeHandle(ref, () => ({
     resetWidget: () => {
@@ -16,6 +16,9 @@ const TurnstileBox = forwardRef(function TurnstileBox({ onToken, onError, resetK
   const widgetRef = useRef(null);
   const callbacksRef = useRef({ onToken, onError });
   const [status, setStatus] = useState('loading');
+  useEffect(() => {
+    if (onStatusChange) onStatusChange(status);
+  }, [status, onStatusChange]);
   const [retryCount, setRetryCount] = useState(0);
   const [showRetry, setShowRetry] = useState(false);
 

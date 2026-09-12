@@ -56,6 +56,7 @@ function PassportCard({
   verificationStage,
   busy,
   error,
+    setTurnstileState,
   resetKey,
   setTurnstileToken,
   onVerificationError,
@@ -363,6 +364,7 @@ const CopyableId = ({ text, children }) => {
             ref={turnstileRef}
             resetKey={resetKey}
             onToken={setTurnstileToken}
+            onStatusChange={setTurnstileState}
             onError={onVerificationError}
           />
         </motion.div>
