@@ -318,7 +318,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
   const scheduleRefresh = (user) => {
     // Determine expiration from user token, fallback to 1 hour
     const tokenExp = user?.exp ? user.exp * 1000 : Date.now() + 60 * 60 * 1000;
-    const timeToRefresh = Math.max(0, tokenExp - Date.now() - 60000); // 60 seconds before expiry
+    const timeToRefresh = Math.max(0, tokenExp - Date.now() - 300000); // 5 minutes before expiry
 
     if (refreshTimeoutId) {
       clearTimeout(refreshTimeoutId);
@@ -330,9 +330,16 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
         const data = await res.json();
         if (data.authenticated) {
           onAuthenticated(data.user);
+          sessionStorage.setItem('passport_session_claims', JSON.stringify(data.user));
           scheduleRefresh(data.user);
         } else {
-          if (onUnauthenticated) onUnauthenticated();
+          const cached = sessionStorage.getItem('passport_session_claims');
+      if (cached) {
+        onAuthenticated(JSON.parse(cached));
+        scheduleRefresh(JSON.parse(cached));
+      } else if (onUnauthenticated) {
+        onUnauthenticated();
+      }
         }
       } catch (e) {
         // Queue state transition retry for when we come online
@@ -342,6 +349,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
           const data = await res.json();
           if (data.authenticated) {
             onAuthenticated(data.user);
+            sessionStorage.setItem('passport_session_claims', JSON.stringify(data.user));
             scheduleRefresh(data.user);
           } else {
             if (onUnauthenticated) onUnauthenticated();
@@ -357,6 +365,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
     const data = await res.json();
     if (data.authenticated) {
       onAuthenticated(data.user);
+      sessionStorage.setItem('passport_session_claims', JSON.stringify(data.user));
       scheduleRefresh(data.user);
     } else {
       if (onUnauthenticated) onUnauthenticated();

@@ -166,6 +166,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
   const [verificationStage, setVerificationStage] = useState('initial');
   const [pendingWallet, setPendingWallet] = useState(null);
   const [turnstileToken, setTurnstileTokenState] = useState('');
+  const [turnstileState, setTurnstileState] = useState('loading');
 
   const setTurnstileToken = useCallback((token, latency) => {
     setTurnstileTokenState(token);
@@ -509,6 +510,7 @@ const startWallet = useCallback(async () => {
     busy,
     error,
     setTurnstileToken,
+    setTurnstileState,
     handleTurnstileError,
     startGoogle,
     startApple,
