@@ -264,13 +264,22 @@ function Sandbox() {
           Live Telemetry & Diagnostics
         </h3>
 
-        <div style={{ marginTop: '1rem' }}>
+                <div style={{ marginTop: '1rem' }}>
           <strong style={{ color: '#94a3b8' }}>Recent Trace IDs & Events:</strong>
           {logs.length === 0 ? <p style={{ color: '#475569', fontSize: '12px' }}>No traces yet...</p> :
             <ul style={{ paddingLeft: '1rem', color: '#cbd5e1', fontSize: '12px' }}>
               {events.length > 0 ? events.map((e, i) => <li key={i}>{e.event} - {e.traceId || e.id}</li>) : logs.map((log, i) => <li key={i}>{log}</li>)}
             </ul>
           }
+        </div>
+
+        <div style={{ marginTop: '1rem' }}>
+          <strong style={{ color: '#94a3b8' }}>Edge Telemetry Insights:</strong>
+          {result && result.latencyMs ? (
+             <p style={{ color: '#cbd5e1', fontSize: '12px' }}>Edge Roundtrip Latency: {result.latencyMs}ms<br/>Verification State: {result.valid ? 'Verified' : 'Unverified'}</p>
+          ) : (
+             <p style={{ color: '#475569', fontSize: '12px' }}>No latency data available.</p>
+          )}
         </div>
 
         <div style={{ marginTop: '1rem' }}>

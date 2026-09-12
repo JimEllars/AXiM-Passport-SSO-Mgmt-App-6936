@@ -70,7 +70,7 @@ function usePassportAuth(redirectUrl) {
          if (cached) {
            try {
              setSession(JSON.parse(cached));
-             setConnectionStatus('reconnecting');
+             setConnectionStatus('degraded');
 
              let attempt = 0;
              const maxRetries = 5;

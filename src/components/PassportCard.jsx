@@ -243,7 +243,7 @@ const CopyableId = ({ text, children }) => {
         Sign in to continue to {appName}
       </div>
 
-      <div className="access-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
+      <div className="access-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500">
         <SafeIcon icon={FiGlobe} />
         <span>Internal access portal</span>
         <b>PHASE 01</b>
@@ -259,7 +259,7 @@ const CopyableId = ({ text, children }) => {
 
       {!redirectUrl && (
         redirectError === 'The requested application is not an approved AXiM destination.' ? (
-          <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)', marginBottom: '24px' }}>
+          <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)', marginBottom: '24px' }}>
             <SafeIcon icon={FiAlertCircle} />
             <span style={{ fontWeight: 600 }}>SECURITY LOCKOUT: Unauthorized Application Callback</span>
           </div>
@@ -391,12 +391,12 @@ const CopyableId = ({ text, children }) => {
       </AnimatePresence>
 
       {error === 'SECURITY_LOCKOUT' ? (
-        <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)' }}>
+        <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500" role="alert" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', borderWidth: '2px', backgroundColor: 'rgba(255, 78, 78, 0.15)' }}>
           <SafeIcon icon={FiAlertCircle} />
           <span style={{ fontWeight: 600 }}>SECURITY LOCKOUT: Unauthorized Ecosystem Access - Incident Logged</span>
         </div>
       ) : error ? (
-        <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" role="alert">
+        <div className="error-message focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500" role="alert">
           <SafeIcon icon={FiAlertCircle} />
           <span>{error}</span>
         </div>
