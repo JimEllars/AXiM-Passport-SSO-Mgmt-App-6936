@@ -727,8 +727,11 @@ async function verifyTokenEndpoint(request: Request, env: Env, ctx: ExecutionCon
   await env.REVOCATION_KV.put(`revoked:${payload.jti}`, '1', { expirationTtl: 120 });
   const sub = payload.sub as string;
   let role = 'authenticated', department = undefined, wallet_address = undefined, email = undefined;
+  let name = undefined;
+  let authorized_apps: string[] = ['core', 'support', 'all'];
+  let linked_identities: string[] = [];
   try {
-    const sbRes = await fetch(env.SUPABASE_URL + '/rest/v1/team_profiles?id=eq.' + sub + '&select=role,department,wallet_address,email', {
+    const sbRes = await fetch(env.SUPABASE_URL + '/rest/v1/team_profiles?id=eq.' + sub + '&select=role,department,wallet_address,email,full_name', {
       headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY }
     });
     if (sbRes.ok) {
@@ -738,10 +741,45 @@ async function verifyTokenEndpoint(request: Request, env: Env, ctx: ExecutionCon
         department = data[0].department;
         wallet_address = data[0].wallet_address;
         email = data[0].email;
+        name = data[0].full_name;
       }
     }
+
+    const identitiesRes = await fetch(env.SUPABASE_URL + '/rest/v1/user_identities?user_id=eq.' + sub + '&select=provider,identity_data', {
+      headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY }
+    });
+    if (identitiesRes.ok) {
+        const identitiesData = await identitiesRes.json() as any[];
+        linked_identities = identitiesData.map((id: any) => {
+            if (id.provider === 'ethereum' || id.provider === 'wallet') {
+                return `wallet:${id.identity_data?.address || id.identity_data?.sub || 'unknown'}`;
+            } else if (id.provider === 'email') {
+                return `email:${id.identity_data?.email || 'unknown'}`;
+            }
+            return `${id.provider}:${id.identity_data?.sub || 'unknown'}`;
+        });
+    }
+
+    // Super User Privilege Override
+    if (email === 'james.ellars@axim.us.com' || email === 'jrellars@gmail.com') {
+        role = 'super_user';
+        authorized_apps = ['all'];
+    }
   } catch(e) {}
-  return json(request, env, { valid: true, user: { id: sub, email, wallet_address, role, department } });
+
+  return json(request, env, {
+    valid: true,
+    user: {
+      sub: sub,
+      email: email,
+      name: name,
+      role: role,
+      department: department,
+      authorized_apps: authorized_apps,
+      linked_identities: linked_identities,
+      session_expires_at: typeof payload.exp === 'number' ? payload.exp : null
+    }
+  });
 }
 
 async function linkWalletEndpoint(request: Request, env: Env, ctx: ExecutionContext, body: Record<string, unknown>): Promise<Response> {
