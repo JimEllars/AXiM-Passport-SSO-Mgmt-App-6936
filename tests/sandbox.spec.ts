@@ -290,10 +290,12 @@ test('Web3 wallet connect and signature mock handshake', async ({ page }) => {
       window.ethereum = {
         request: async ({ method, params }) => {
           if (method === 'eth_requestAccounts') return ['0x1234567890123456789012345678901234567890'];
+          if (method === 'personal_sign') return '0xmockedsignature...';
           if (method === 'eth_chainId') return '0x1';
-          if (method === 'personal_sign') return '0xmockedsignature';
           return null;
-        }
+        },
+        on: () => {},
+        removeListener: () => {}
       };
     });
 
@@ -338,6 +340,46 @@ test('Web3 wallet connect and signature mock handshake', async ({ page }) => {
     expect(text.toLowerCase()).toContain('security posture');
   });
 });
+
+  test('Session remains mounted during 5xx network degradation on refresh', async ({ page }) => {
+    // Setup initial session
+    await page.addInitScript(() => {
+      localStorage.setItem('optimistic_session', JSON.stringify({ sub: 'degraded_user', exp: (Date.now() / 1000) + 10 }));
+    });
+
+    // Intercept /api/v1/auth/session to fail 500
+    await page.route('**/api/v1/auth/identities', async route => {
+      await route.fulfill({ status: 200, body: JSON.stringify({ identities: [{ id: '123', provider: 'email', identity_data: { email: 'test@degraded.com' } }] }) });
+    });
+    let sessionCount = 0;
+    await page.route('**/api/v1/auth/session', async route => {
+      if (sessionCount === 0) {
+        sessionCount++;
+        await route.fulfill({ status: 200, body: JSON.stringify({ authenticated: true, user: { sub: 'degraded_user', exp: (Date.now() / 1000) + 10 } }) });
+      } else {
+        await route.fulfill({ status: 503, body: JSON.stringify({ error: 'Gateway unavailable' }) });
+      }
+    });
+    await page.route('**/api/v1/auth/identities', async route => {
+      await route.fulfill({ status: 200, body: JSON.stringify([{ id: '123', provider: 'email', identity_data: { email: 'test@degraded.com' } }]) });
+    });
+    await page.route('**/api/v1/auth/refresh', async route => {
+      await route.fulfill({ status: 500, body: JSON.stringify({ error: 'Internal Server Error' }) });
+    });
+    await page.route('**/api/health', route => route.fulfill({ status: 200, body: '{}' }));
+    await page.route('**/api/v1/health', route => route.fulfill({ status: 200, body: '{}' }));
+
+    await page.goto('/?redirect=https://example.com');
+
+    // Check that optimistic session is still used despite the 500 error
+    await page.waitForTimeout(1000);
+    const text = await page.evaluate(() => document.body.innerText);
+    expect(text).toContain('SECURITY POSTURE');
+    // Ensure we are not kicked back to login
+    // Ensure the user session information is displayed or login is hidden
+    const checkMark = page.locator('text="Active"');
+    await expect(checkMark.first()).toBeVisible();
+  });
 
   test('Route switching preserves cross-tab state via storage event', async ({ page, context }) => {
     // Open two pages to simulate cross-tab
