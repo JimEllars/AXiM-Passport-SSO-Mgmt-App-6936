@@ -28,7 +28,7 @@ function usePassportAuth(redirectUrl) {
       return null;
     }
   });
-  const [identities, setIdentities] = useState([]);
+  const [identities, setIdentities] = useState(undefined);
 
   const [connectionStatus, setConnectionStatus] = useState('connected');
 
