@@ -17,6 +17,8 @@ interface TelemetryPayload {
   turnstile_passed?: boolean;
   userId?: string;
   clientAppId?: string;
+  clientId?: string;
+  route?: string;
   [key: string]: any;
 }
 
@@ -27,23 +29,22 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
     userIdHash: payload.userId ? (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload.userId))).toString() : 'anonymous',
     tenantId: 'axim_core',
     userId: payload.userId || 'anonymous',
-    clientId: payload.clientId || payload.clientAppId || 'axim-passport-sso',
+    clientId: payload.clientId || payload.clientAppId || 'direct',
     status: payload.status || (payload.statusCode ? payload.statusCode.toString() : '200'),
     latencyMs: payload.latencyMs || payload.duration || 0,
     cfRay: payload.rayId || 'unknown',
-
     eventType: eventType,
     durationMs: payload.latencyMs || payload.duration || 0,
     errorCode: payload.errorCode || (payload.statusCode && payload.statusCode >= 400 ? payload.statusCode.toString() : ''),
     userAgentHash: payload.userAgent ? (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload.userAgent))).toString() : 'unknown',
     ipCountry: payload.country || 'unknown',
     xCorrelationId: payload.correlationId || traceId || '',
-
     rayId: payload.rayId || 'unknown',
     clientIp: payload.clientIp || 'unknown',
     colo: payload.colo || 'unknown',
     action: payload.action || eventType,
     statusCode: payload.statusCode || 200,
+    route: payload.route || 'unknown',
     ...payload,
   };
 
@@ -69,26 +70,27 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
       correlation_id: structuredPayload.xCorrelationId,
     };
 
+    let telemetrySent = false;
 
     try {
       if (env.PASSPORT_ANALYTICS && typeof env.PASSPORT_ANALYTICS.writeDataPoint === 'function') {
           env.PASSPORT_ANALYTICS.writeDataPoint({
-              blobs: [
+              indexes: [
                   eventType,
-                  structuredPayload.userIdHash,
-                  structuredPayload.tenantId,
-                  structuredPayload.status,
-                  structuredPayload.errorCode,
-                  structuredPayload.userAgentHash,
-                  structuredPayload.ipCountry,
-                  structuredPayload.xCorrelationId,
-                  traceId || ''
+                  structuredPayload.clientId
+              ],
+              blobs: [
+                  structuredPayload.route,
+                  structuredPayload.statusCode.toString(),
+                  structuredPayload.userId,
+                  structuredPayload.ipCountry
               ],
               doubles: [
-                  structuredPayload.durationMs
-              ],
-              indexes: [structuredPayload.cfRay]
+                  structuredPayload.durationMs,
+                  structuredPayload.statusCode >= 400 ? 1 : 0
+              ]
           });
+          telemetrySent = true;
       }
     } catch (e) {
       console.log(JSON.stringify({ type: 'analytics_error', error: (e as Error).message, data: logData }));
@@ -117,8 +119,8 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
       console.log(JSON.stringify({ type: 'analytics_error', error: (e as Error).message, data: logData }));
     }
 
-    if (!env.PASSPORT_ANALYTICS && !env.ANALYTICS) {
-       console.log(JSON.stringify(logData));
+    if (!telemetrySent) {
+       console.log(JSON.stringify({ type: 'telemetry_fallback', data: logData }));
     }
 
     try {
