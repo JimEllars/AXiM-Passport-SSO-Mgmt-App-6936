@@ -73,3 +73,11 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Added non-blocking client telemetry `trackEvent` using `navigator.sendBeacon` and `fetch(keepalive)`.
 - Handled UI resilience for Turnstile loading and enhanced Sandbox inspector for traces.
 - Ensured 100% test coverage including logout token revocation logic and SSO token copy events.
+
+## 2024-05-28: AXiM Passport Master SSO — Fix Auth Lockout Bug, Repository Purge & Enterprise Silent SSO Handshake (Phase 10.1)
+
+- **Bug Fix**: Addressed unauthenticated skeleton lockout bug in `usePassportAuth.js`. Ensured `setIdentities([])` is explicitly called when fetching identities fails or yields an 'Unauthenticated' state, thereby escaping the pulse-loading skeleton layout.
+- **Repository Hygiene**: Added scripts patterns (`*.py`, `patch_*`, `verify*`, etc.) to `.gitignore` and successfully purged stray scripts (`patch_*.py`) from the repository root.
+- **Silent SSO Handshake**: Configured the `GET /login` handler within `passport-edge-worker/src/index.ts` to manage silent SSO delegation. It intercepts the HTTP call, determines redirection clearance based on `env.ALLOWED_REDIRECT_ORIGINS`, verifies session states via Edge Worker logic, dynamically mints delegation tokens via `REVOCATION_KV` (60-sec TTL), and conducts a redirect flow for seamless transitions across AXiM services.
+- **Ecosystem App Launcher**: Embedded an interactive grid launcher inside `src/components/PassportCard.jsx` below the connected identities layout for authenticated users to navigate ecosystem applications in one click.
+- **Verification**: Clean linting and comprehensive build steps (React frontend UI and `passport-edge-worker`). Ran and passed all `playwright` E2E test specs correctly validating robust execution.

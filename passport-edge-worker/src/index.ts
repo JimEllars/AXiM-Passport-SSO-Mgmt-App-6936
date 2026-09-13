@@ -1569,6 +1569,48 @@ export default {
     }
 
 
+
+    if (request.method === 'GET' && url.pathname === '/login') {
+      const redirectUri = url.searchParams.get('redirect_uri');
+      const appId = url.searchParams.get('app_id') || 'unknown';
+      const state = url.searchParams.get('state') || '';
+
+      const isAllowedRedirectOrigin = redirectUri ? env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(originFrom(redirectUri)) : false;
+
+      if (!redirectUri || !isAllowedRedirectOrigin) {
+        return createErrorResponse('INVALID_REDIRECT', 'The requested application is not an approved AXiM destination.', 400);
+      }
+
+      const cookieHeader = request.headers.get('Cookie') || '';
+      const match = cookieHeader.match(/axim_session=([^;]+)/);
+      const sessionToken = match ? match[1] : null;
+
+      if (sessionToken) {
+        try {
+          const payload = await verifyJwt(sessionToken, env.JWT_SECRET);
+          if (payload && typeof payload.exp === 'number' && payload.exp > Math.floor(Date.now() / 1000)) {
+            const token = crypto.randomUUID();
+            await env.REVOCATION_KV.put('sso:' + token, JSON.stringify({ userId: payload.sub, email: payload.email }), { expirationTtl: 60 });
+
+            ctx.waitUntil(dispatchCoreTelemetry(env, 'silent_sso_handoff', { app_id: appId, target_origin: originFrom(redirectUri) }, request.headers.get('x-axim-trace-id') || undefined));
+
+            const redirectUrl = new URL(redirectUri);
+            redirectUrl.searchParams.set('token', token);
+            if (state) redirectUrl.searchParams.set('state', state);
+            return Response.redirect(redirectUrl.toString(), 302);
+          }
+        } catch (e) {
+          // Token invalid, fallthrough
+        }
+      }
+
+      const redirectUrl = new URL(env.PASSPORT_ORIGIN || 'https://passport.axim.us.com');
+      redirectUrl.searchParams.set('redirect_uri', redirectUri);
+      if (appId !== 'unknown') redirectUrl.searchParams.set('app_id', appId);
+      if (state) redirectUrl.searchParams.set('state', state);
+      return Response.redirect(redirectUrl.toString(), 302);
+    }
+
     if (request.method === 'GET' && url.pathname === '/health/bindings') {
       const bindings = {
         turnstile: !!env.TURNSTILE_SECRET_KEY,

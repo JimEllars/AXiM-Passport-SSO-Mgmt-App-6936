@@ -50,6 +50,7 @@ function usePassportAuth(redirectUrl) {
          } else {
            localStorage.removeItem('optimistic_session');
            setSession(null);
+           setIdentities([]);
            throw new Error('Unauthenticated');
          }
       })
@@ -63,6 +64,7 @@ function usePassportAuth(redirectUrl) {
          if (e.message === 'Unauthenticated') {
            localStorage.removeItem('optimistic_session');
            setSession(null);
+           setIdentities([]);
            return;
          }
 
@@ -77,6 +79,7 @@ function usePassportAuth(redirectUrl) {
              const retry = () => {
                if (attempt >= maxRetries) {
                  setConnectionStatus('offline');
+                 setIdentities([]);
                  return;
                }
                attempt++;
@@ -95,12 +98,14 @@ function usePassportAuth(redirectUrl) {
                         setConnectionStatus('connected');
                      } else {
                         setSession(null);
+                        setIdentities([]);
                         localStorage.removeItem('optimistic_session');
                      }
                    })
                    .catch((err) => {
                      if (err.message === 'Unauthenticated') {
                         setSession(null);
+                        setIdentities([]);
                         localStorage.removeItem('optimistic_session');
                         setConnectionStatus('offline');
                      } else {
@@ -113,6 +118,7 @@ function usePassportAuth(redirectUrl) {
            } catch(err){ /* ignore */ }
          } else {
             setConnectionStatus('offline');
+            setIdentities([]);
          }
       });
   }, []);
@@ -126,6 +132,7 @@ function usePassportAuth(redirectUrl) {
           } catch(err) { /* ignore */ }
         } else {
           setSession(null);
+           setIdentities([]);
         }
       }
     };
