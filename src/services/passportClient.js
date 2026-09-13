@@ -385,7 +385,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
 export function trackEvent(eventName, metadata = {}) {
   try {
     const workerUrl = import.meta.env.VITE_PASSPORT_EDGE_URL || 'https://passport.axim.us.com';
-    const url = `${workerUrl}/api/v1/telemetry`;
+    const url = `${workerUrl}/api/telemetry/events`;
     const traceId = crypto.randomUUID();
 
     const payload = {

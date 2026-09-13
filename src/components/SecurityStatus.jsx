@@ -29,20 +29,20 @@ function SecurityStatus({ readiness, errorWarning, connectionStatus }) {
     {
       icon: FiShield,
       label: 'Bot Protection',
-      value: readiness.turnstile ? 'Verified Human' : (readiness.turnstileState === 'blocked' ? 'Verification Blocked' : (readiness.turnstileState === 'loading' ? 'Verifying...' : 'Challenge Required')),
+      value: readiness.turnstile ? 'Session Verified' : (readiness.turnstileState === 'blocked' ? 'Verification Blocked' : (readiness.turnstileState === 'loading' ? 'Verifying...' : 'Challenge Required')),
       color: readiness.turnstile ? 'text-emerald-400' : (readiness.turnstileState === 'blocked' ? 'text-rose-400' : 'text-amber-400')
     },
     {
       icon: FiLock,
-      label: 'Protocol Security',
-      value: 'TLS 1.3 / AES-GCM',
+      label: 'Telemetry Activity',
+      value: 'Telemetry Active',
       color: 'text-emerald-400'
     },
     {
       icon: FiZap,
       label: 'Edge Connection',
-      value: connectionStatus === 'connected' ? (latency > 0 ? `Active (${latency}ms)` : 'Active') : connectionStatus === 'reconnecting' ? 'Connection Degraded' : 'Offline',
-      color: connectionStatus === 'connected' ? 'text-emerald-400' : connectionStatus === 'reconnecting' ? 'text-amber-400' : 'text-rose-400'
+      value: connectionStatus === 'connected' ? (latency > 0 ? `Edge Connected (${latency}ms)` : 'Edge Connected') : connectionStatus === 'degraded' ? 'Connection Degraded' : 'Offline',
+      color: connectionStatus === 'connected' ? 'text-emerald-400' : connectionStatus === 'degraded' ? 'text-amber-400' : 'text-rose-400'
     },
   ];
 

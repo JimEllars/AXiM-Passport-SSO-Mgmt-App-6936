@@ -1602,10 +1602,13 @@ export default {
 
     if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/health') {
       return json(request, env, {
-        status: 'operational',
-        timestamp: new Date().toISOString(),
+        status: 'ok',
+        timestamp: Date.now(),
         version: '1.0.0',
-        colo: request.cf?.colo || 'unknown'
+        bindings: {
+          kv: !!env.REVOCATION_KV,
+          analytics: !!env.PASSPORT_ANALYTICS || !!env.ANALYTICS
+        }
       });
     }
 
@@ -1648,6 +1651,27 @@ export default {
         if (url.pathname === '/api/v1/auth/link-wallet') return await linkWalletEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/logout') return await logoutEndpoint(request, env, body, ctx);
         if (url.pathname === '/api/v1/telemetry') return await handleTelemetry(request, env, ctx, body);
+
+        if (url.pathname === '/api/telemetry/events') {
+          // Fire and forget
+          ctx.waitUntil((async () => {
+             try {
+               const payload = {
+                 event: body.event,
+                 timestamp: body.timestamp || new Date().toISOString(),
+                 traceId: request.headers.get('x-axim-trace-id') || undefined,
+                 ...body
+               };
+               if (typeof payload.event === 'string') {
+                 await dispatchCoreTelemetry(env, payload.event, payload as any, payload.traceId);
+               }
+             } catch(e) {
+               console.info(JSON.stringify({ error: "Telemetry fallback", payload: body }));
+             }
+          })());
+          return json(request, env, { success: true }, 202);
+        }
+
         if (url.pathname === '/api/v1/auth/email/start') return await startEmailOtp(request, env, body);
         if (url.pathname === '/api/v1/auth/email/verify') return await verifyEmailOtp(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/link-provider') return await linkProviderEndpoint(request, env, ctx, body);
