@@ -30,3 +30,9 @@ dist-ssr
 dist-sdk/
 playwright-report/
 test-results/
+*.py
+patch_*
+verify*
+plan.md
+vite
+axim-passport@*

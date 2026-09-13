@@ -140,6 +140,46 @@ const CopyableId = ({ text, children }) => {
   );
 };
 
+
+  const renderEcosystemLauncher = () => {
+    const apps = [
+      { name: 'AXiM Core', url: 'https://core.axim.us.com', icon: FiGlobe },
+      { name: 'Web3 Frontend', url: 'https://axim.us.com', icon: FiHexagon },
+      { name: 'Green Machine', url: 'https://greenmachine.axim.us.com', icon: FiGlobe },
+      { name: 'Support System', url: 'https://support.axim.us.com', icon: FiMail },
+      { name: 'Coding Lab', url: 'https://coder.axim.us.com', icon: FiGlobe },
+      { name: 'Mesh Network', url: 'https://mesh.axim.us.com', icon: FiGlobe },
+      { name: 'VendOS Fleet', url: 'https://vendos.axim.us.com', icon: FiGlobe },
+      { name: 'Onyx Cockpit', url: 'https://onyx.axim.us.com', icon: FiGlobe }
+    ];
+
+    return (
+      <div className="mt-6 border-t border-slate-700/50 pt-4">
+        <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">AXiM Ecosystem Launcher</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {apps.map((app, idx) => {
+            const domain = app.url.replace('https://', '');
+            return (
+              <a
+                key={idx}
+                href={`${app.url}/login?redirect_uri=${encodeURIComponent(app.url + '/auth/callback')}`}
+                className="flex flex-col items-center justify-center bg-slate-800/50 hover:bg-slate-700/50 rounded-lg p-3 border border-slate-700/50 transition-colors shadow-sm"
+              >
+                <SafeIcon icon={app.icon} className="w-6 h-6 text-slate-300 mb-2" />
+                <span className="text-sm font-semibold text-slate-200 text-center">{app.name}</span>
+                <span className="text-xs text-slate-500 text-center truncate w-full">{domain}</span>
+                <div className="mt-2 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+                  <span className="text-[10px] text-emerald-400 font-medium tracking-wide">Connected</span>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderIdentities = () => {
     if (identities === undefined) {
       return (
@@ -277,7 +317,12 @@ const CopyableId = ({ text, children }) => {
           <div key={i} className="animate-pulse bg-slate-800/50 border border-slate-700/50 rounded-lg h-12 w-full mb-3 shadow"></div>
         ))}
       </section>
-    ) : identities && identities.length > 0 ? renderIdentities() : (
+        ) : identities && identities.length > 0 ? (
+      <>
+        {renderIdentities()}
+        {renderEcosystemLauncher()}
+      </>
+    ) : (
       <section className="auth-options" aria-label="Authentication options" aria-live="polite" aria-busy={busy}>
         <AuthButton
           icon={FiHexagon}
