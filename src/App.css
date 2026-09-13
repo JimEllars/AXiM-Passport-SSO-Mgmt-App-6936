@@ -595,6 +595,9 @@ h1 em {
 .auth-button {
   transition: transform 0.15s ease-out, background 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out;
 }
+.auth-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
 
 .auth-button[data-state="authenticating"] {
   opacity: 0.8;

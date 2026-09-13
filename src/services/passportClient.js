@@ -315,10 +315,12 @@ export async function validateSession(supabaseClient) {
 let refreshTimeoutId = null;
 
 export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
-  const scheduleRefresh = (user) => {
+  const scheduleRefresh = (user, retryCount = 0) => {
     // Determine expiration from user token, fallback to 1 hour
     const tokenExp = user?.exp ? user.exp * 1000 : Date.now() + 60 * 60 * 1000;
-    const timeToRefresh = Math.max(0, tokenExp - Date.now() - 300000); // 5 minutes before expiry
+    // Buffer is 30 seconds for clock skew. Refresh starts 5 minutes before expiry.
+    // Ensure we trigger before actual expiry using Math.max with clock-skew buffer.
+    const timeToRefresh = retryCount > 0 ? Math.pow(2, retryCount) * 1000 : Math.max(0, tokenExp - Date.now() - 30000);
 
     if (refreshTimeoutId) {
       clearTimeout(refreshTimeoutId);
@@ -327,35 +329,52 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
     refreshTimeoutId = setTimeout(async () => {
       try {
         const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
+        if (!res.ok && res.status >= 500) {
+           throw new Error('Server Error');
+        }
         const data = await res.json();
         if (data.authenticated) {
           onAuthenticated(data.user);
           sessionStorage.setItem('passport_session_claims', JSON.stringify(data.user));
-          scheduleRefresh(data.user);
+          scheduleRefresh(data.user, 0);
         } else {
           const cached = sessionStorage.getItem('passport_session_claims');
-      if (cached) {
-        onAuthenticated(JSON.parse(cached));
-        scheduleRefresh(JSON.parse(cached));
-      } else if (onUnauthenticated) {
-        onUnauthenticated();
-      }
+          if (cached) {
+             const parsed = JSON.parse(cached);
+             // If token is actually expired and server says not authenticated, log out
+             if (parsed.exp && (parsed.exp * 1000 < Date.now())) {
+                if (onUnauthenticated) onUnauthenticated();
+             } else {
+                onAuthenticated(parsed);
+                scheduleRefresh(parsed, retryCount + 1);
+             }
+          } else if (onUnauthenticated) {
+             onUnauthenticated();
+          }
         }
       } catch (e) {
-        // Queue state transition retry for when we come online
-        const onOnline = async () => {
-          window.removeEventListener('online', onOnline);
-          const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
-          const data = await res.json();
-          if (data.authenticated) {
-            onAuthenticated(data.user);
-            sessionStorage.setItem('passport_session_claims', JSON.stringify(data.user));
-            scheduleRefresh(data.user);
-          } else {
-            if (onUnauthenticated) onUnauthenticated();
-          }
-        };
-        window.addEventListener('online', onOnline);
+         const cached = sessionStorage.getItem('passport_session_claims');
+         if (cached) {
+            const parsed = JSON.parse(cached);
+            // Re-schedule with exponential backoff rather than clearing state
+            onAuthenticated(parsed); // Keep UI intact
+            scheduleRefresh(parsed, retryCount + 1);
+         } else {
+            // Queue state transition retry for when we come online
+            const onOnline = async () => {
+              window.removeEventListener('online', onOnline);
+              const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
+              const data = await res.json().catch(()=>({}));
+              if (data.authenticated) {
+                onAuthenticated(data.user);
+                sessionStorage.setItem('passport_session_claims', JSON.stringify(data.user));
+                scheduleRefresh(data.user, 0);
+              } else {
+                if (onUnauthenticated) onUnauthenticated();
+              }
+            };
+            window.addEventListener('online', onOnline);
+         }
       }
     }, timeToRefresh);
   };

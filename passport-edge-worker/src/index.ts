@@ -5,6 +5,7 @@ import { EmailDispatchManager } from './emailService';
 import { verifyMessage } from 'viem';
 
 export interface Env {
+  TURNSTILE_ENFORCEMENT_MODE?: string;
   PASSPORT_ANALYTICS?: any;
   AXIM_CORE_API_URL: string;
   AXIM_INTERNAL_KEY: string;
@@ -325,16 +326,30 @@ async function verifyTurnstile(token: unknown, request: Request, env: Env): Prom
   const ip = request.headers.get('CF-Connecting-IP');
   if (ip) form.set('remoteip', ip);
 
-  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    body: form,
-  });
-  if (!response.ok) return false;
+  try {
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: form,
+    });
 
-  const result = await response.json<TurnstileResult>();
-  return result.success
-    && result.action === env.TURNSTILE_ACTION
-    && frontendOrigins(env).some((origin) => result.hostname === new URL(origin).hostname);
+    // Distinguish between actual rejection and timeout/5xx
+    if (!response.ok) {
+      if (response.status >= 500 && env.TURNSTILE_ENFORCEMENT_MODE === 'permissive') {
+        return true; // Fail open if Turnstile is down and we are permissive
+      }
+      return false; // Fail closed by default on errors
+    }
+
+    const result = await response.json<TurnstileResult>();
+    return result.success
+      && result.action === env.TURNSTILE_ACTION
+      && frontendOrigins(env).some((origin) => result.hostname === new URL(origin).hostname);
+  } catch (error) {
+    if (env.TURNSTILE_ENFORCEMENT_MODE === 'permissive') {
+      return true; // Fail open on network errors to Turnstile if permissive
+    }
+    return false; // Fail closed by default
+  }
 }
 
 async function signJwt(payload: Record<string, unknown>, secret: string): Promise<string> {

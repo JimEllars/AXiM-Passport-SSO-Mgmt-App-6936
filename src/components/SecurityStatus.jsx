@@ -29,27 +29,40 @@ function SecurityStatus({ readiness, errorWarning, connectionStatus }) {
     {
       icon: FiShield,
       label: 'Bot Protection',
-      value: readiness.turnstile ? 'Session Verified' : (readiness.turnstileState === 'blocked' ? 'Verification Blocked' : (readiness.turnstileState === 'loading' ? 'Verifying...' : 'Challenge Required')),
+      value: readiness.turnstile ? 'Verified' : (readiness.turnstileState === 'blocked' ? 'Blocked' : (readiness.turnstileState === 'loading' ? 'Verifying...' : 'Challenge Required')),
       color: readiness.turnstile ? 'text-emerald-400' : (readiness.turnstileState === 'blocked' ? 'text-rose-400' : 'text-amber-400')
     },
     {
-      icon: FiLock,
-      label: 'Telemetry Activity',
-      value: 'Telemetry Active',
+      icon: FiActivity,
+      label: 'Telemetry',
+      value: 'Active',
       color: 'text-emerald-400'
     },
     {
       icon: FiZap,
-      label: 'Edge Connection',
-      value: connectionStatus === 'connected' ? (latency > 0 ? `Edge Connected (${latency}ms)` : 'Edge Connected') : connectionStatus === 'degraded' ? 'Connection Degraded' : 'Offline',
+      label: 'Edge Node',
+      value: connectionStatus === 'connected' ? (latency > 0 ? `${latency}ms` : 'Connected') : connectionStatus === 'degraded' ? 'Degraded' : 'Offline',
       color: connectionStatus === 'connected' ? 'text-emerald-400' : connectionStatus === 'degraded' ? 'text-amber-400' : 'text-rose-400'
     },
   ];
+
+  const handleRevoke = () => {
+     if(window.confirm('Are you sure you want to revoke this session?')) {
+        // Find logout button from parent or dispatch event
+        const evt = new CustomEvent('passport:revoke_session');
+        window.dispatchEvent(evt);
+     }
+  };
 
   const operational = items.every((item) => !item.value.includes('Blocked') && !item.value.includes('Required') && !item.value.includes('Offline'));
 
   return (
     <section className="flex flex-col gap-3 transition-all duration-300" aria-label="Security status" aria-live="polite" role="status">
+      <div className="flex justify-end mb-[-24px] z-10 relative">
+        <button onClick={handleRevoke} className="text-[9px] bg-slate-800/80 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 px-2 py-1 rounded border border-slate-700 hover:border-rose-700/50 transition-colors uppercase tracking-wider font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-rose-500 shadow-sm active:scale-[0.98]">
+           Revoke Session
+        </button>
+      </div>
       {errorWarning && (
         <div className="flex items-center gap-2 px-3 py-2 text-sm text-amber-200 bg-amber-900/40 border border-amber-700/50 rounded backdrop-blur-md">
           <SafeIcon icon={FiAlertTriangle} />
