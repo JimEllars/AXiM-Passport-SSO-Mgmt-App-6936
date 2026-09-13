@@ -87,3 +87,11 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 * Resiliency: Nonce KV integration with TTL to prevent replay attacks.
 * Turnstile: Handled timeout and error resiliency with exponential backoff and permissive bypass support.
 * UI/UX: Refreshed `PassportCard`, modernized styles, and added session sync via storage events.
+
+## 2026-09-13 Hardening Update (Sprint 1)
+- **Telemetry & Analytics**: Bound `PASSPORT_ANALYTICS` to worker and integrated non-blocking `ctx.waitUntil()` telemetry dispatch.
+- **Session Resiliency**: Introduced 30-second token clock-skew buffer on frontend and exponential backoff retry for network errors.
+- **Edge Security Hardening**: Validated nonces using `REVOCATION_KV` with 300-second TTL. Fallback options configured for Turnstile endpoint failures (`TURNSTILE_ENFORCEMENT_MODE`).
+- **UI Improvements**: Updated `PassportCard.jsx` and `SecurityStatus.jsx` to feature live countdowns, DID copy functionality, and responsive truncation. Also updated active UI states (scale animations, focus-visible outlines).
+- **Cross-Tab Sync**: Enhanced `optimistic_session` synchronization handling to fully broadcast log-in/log-out updates across browser contexts.
+- **Test Coverage**: Added synthetic Web3 wallet injection and 5xx network degradation mocking to Playwright E2E suites.
