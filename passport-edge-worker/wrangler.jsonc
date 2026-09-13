@@ -5,6 +5,7 @@
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "preview_urls": true,
   "route": {
     "pattern": "passport.axim.us.com/api/*",
     "zone_name": "axim.us.com"

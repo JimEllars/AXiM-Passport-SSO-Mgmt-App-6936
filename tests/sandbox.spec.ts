@@ -32,7 +32,7 @@ test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
     expect(request.url()).toContain('passport.axim.us.com');
     expect(request.url()).toContain('redirect=');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForURL('https://passport.axim.us.com/**');
 
     await page.route('**/api/v1/auth/token/consume', async route => {
       await route.fulfill({
