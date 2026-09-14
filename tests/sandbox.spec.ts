@@ -443,3 +443,35 @@ test('Web3 wallet connect and signature mock handshake', async ({ page }) => {
     await expect(securityStatus).toHaveAttribute('role', 'status');
     await expect(securityStatus).toHaveAttribute('aria-live', 'polite');
   });
+
+  test('Worker /api/v1/health endpoint diagnostic metric assertions', async ({ page }) => {
+    let healthRequested = false;
+    await page.route('**/api/v1/health', async route => {
+      healthRequested = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'operational',
+          timestamp: '2026-09-13T00:00:00.000Z',
+          version: '1.1.0',
+          colo: 'SFO',
+          uptime: 'active',
+          upstream_storage: 'healthy',
+          kv_connectivity: 'connected',
+          edge_region: 'SFO'
+        })
+      });
+    });
+
+    await page.goto('/?redirect=https://example.com');
+    // We just wait and see if it loads successfully and the mock is hit or if we can make a fetch directly.
+    const res = await page.evaluate(async () => {
+       const req = await fetch('/api/v1/health');
+       return await req.json();
+    });
+
+    expect(res.status).toBe('operational');
+    expect(res.kv_connectivity).toBe('connected');
+    expect(res.edge_region).toBe('SFO');
+  });

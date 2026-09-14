@@ -144,11 +144,16 @@ function usePassportAuth(redirectUrl) {
   useEffect(() => {
     if (!session || !session.exp) return;
     const expMs = session.exp * 1000;
-    const timeUntilRefresh = expMs - Date.now() - 300000; // 5 minutes before expiration as per prompt
+    let timeUntilRefresh = expMs - Date.now() - 300000; // 5 minutes before expiration as per prompt
 
-    if (timeUntilRefresh <= 0) return;
+    if (timeUntilRefresh <= 0) {
+      timeUntilRefresh = 1000; // if already past buffer, run quickly
+    }
 
-    const timeoutId = setTimeout(() => {
+    let retryCount = 0;
+    let timeoutId;
+
+    const attemptRefresh = () => {
       fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/refresh`, {
         method: 'POST',
         credentials: 'include'
@@ -160,11 +165,27 @@ function usePassportAuth(redirectUrl) {
                if (data.authenticated) {
                  localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
                  setSession(data.user);
+                 retryCount = 0;
                }
-            }).catch(() => {});
+            }).catch(scheduleRetry);
+        } else if (res.status >= 500) {
+           scheduleRetry();
+        } else {
+           if (res.status === 401) {
+              setSession(null);
+              localStorage.removeItem('optimistic_session');
+           }
         }
-      }).catch(() => {});
-    }, timeUntilRefresh);
+      }).catch(scheduleRetry);
+    };
+
+    const scheduleRetry = () => {
+       retryCount++;
+       const backoff = Math.min(Math.pow(2, retryCount) * 1000, 30000); // Max 30s backoff
+       timeoutId = setTimeout(attemptRefresh, backoff);
+    };
+
+    timeoutId = setTimeout(attemptRefresh, timeUntilRefresh);
 
     return () => clearTimeout(timeoutId);
   }, [session]);

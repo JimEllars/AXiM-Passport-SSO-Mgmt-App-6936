@@ -1650,10 +1650,12 @@ export default {
       return json(request, env, {
         status: (isStorageHealthy && isAuthHealthy) ? 'operational' : 'degraded',
         timestamp: new Date().toISOString(),
-        version: '1.0.0',
+        version: '1.1.0',
         colo: request.cf?.colo || 'unknown',
-        uptime: 'unknown',
-        upstream_storage: isStorageHealthy ? 'healthy' : 'unavailable'
+        uptime: 'active',
+        upstream_storage: isStorageHealthy ? 'healthy' : 'unavailable',
+        kv_connectivity: isStorageHealthy ? 'connected' : 'disconnected',
+        edge_region: request.cf?.colo || 'unknown'
       });
     }
 

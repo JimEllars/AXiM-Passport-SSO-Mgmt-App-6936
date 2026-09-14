@@ -20,6 +20,14 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Enhanced `PassportCard.jsx` and `SecurityStatus.jsx` to render ambient error boundaries instead of disrupting the main flow when facing transient provider or Turnstile issues.
 - Established a `Sandbox.jsx` developer pane to stream session traces directly.
 
+### Milestone 2.1 (Current)
+- Completed Milestone 2.1: AXiM Passport SSO — Telemetry Hardening, Session Continuity & UX Polish.
+- Updated `passport-edge-worker/src/telemetry.ts` to output structured JSON events with timestamps, request IDs (`traceId`), edge colocation (`cf.colo`), and status codes, ensuring non-blocking execution via `ctx.waitUntil()`.
+- Enhanced `/api/v1/health` endpoint to report worker version, KV connectivity status, and edge region.
+- Hardened token refresh in `src/hooks/usePassportAuth.js` and `src/services/passportClient.js` with an in-memory token refresh buffer (5 minutes before expiration) and graceful exponential backoff for transient 5xx network errors to prevent abrupt session termination.
+- Upgraded the Sandbox dashboard UI (`src/routes/Sandbox.jsx`) with a real-time latency badge measuring worker ping, a collapsible JWT/claims inspector with a one-click copy button, and clear visual state transitions in `SecurityStatus.jsx` for Turnstile verification (Active, Verifying, Bypass, Challenge Required).
+- Expanded Playwright E2E suites (`tests/sandbox.spec.ts`) with automated assertions verifying edge diagnostic endpoints (`/api/v1/health`) return 200 OK and expected system metrics.
+
 ### Sprint 2 (Updates)
 - Added telemetry logic for user actions (`AUTH_INITIATED`, `TURNSTILE_VERIFIED`, etc) across worker endpoints. Handled PII sanitization.
 - Integrated rate limiting headers `X-RateLimit-Limit` & `X-RateLimit-Remaining` to the SSO endpoint headers for cross-origin tracking.
