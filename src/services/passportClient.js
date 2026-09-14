@@ -320,7 +320,8 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
     const tokenExp = user?.exp ? user.exp * 1000 : Date.now() + 60 * 60 * 1000;
     // Buffer is 30 seconds for clock skew. Refresh starts 5 minutes before expiry.
     // Ensure we trigger before actual expiry using Math.max with clock-skew buffer.
-    const timeToRefresh = retryCount > 0 ? Math.pow(2, retryCount) * 1000 : Math.max(0, tokenExp - Date.now() - 30000);
+    // Safe in-memory token refresh buffering before expiration (e.g. 5 minutes before)
+    const timeToRefresh = retryCount > 0 ? Math.pow(2, retryCount) * 1000 : Math.max(0, tokenExp - Date.now() - 300000);
 
     if (refreshTimeoutId) {
       clearTimeout(refreshTimeoutId);

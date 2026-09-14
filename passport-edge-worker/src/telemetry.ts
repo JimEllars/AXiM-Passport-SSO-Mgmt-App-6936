@@ -119,9 +119,20 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
       console.log(JSON.stringify({ type: 'analytics_error', error: (e as Error).message, data: logData }));
     }
 
+
     if (!telemetrySent) {
        console.log(JSON.stringify({ type: 'telemetry_fallback', data: logData }));
     }
+
+    // Diagnostic structured log requested by milestone
+    console.log(JSON.stringify({
+      timestamp: structuredPayload.timestamp,
+      request_id: traceId || structuredPayload.rayId,
+      colo: structuredPayload.colo,
+      status_code: structuredPayload.statusCode,
+      event: eventType
+    }));
+
 
     try {
       if (env.AXIM_CORE_API_URL && env.AXIM_INTERNAL_KEY) {

@@ -208,9 +208,16 @@ function Sandbox() {
       {error && <p style={{ color: 'red', marginTop: '1rem' }}>{error}</p>}
 
       {result && (
-        <div style={{ marginTop: '2rem', backgroundColor: '#111', padding: '1rem', borderRadius: '4px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ color: '#00ffcc', margin: 0 }}>Authentication Success!</h2>
+        <div style={{ marginTop: '2rem', backgroundColor: '#1e293b', padding: '1rem', borderRadius: '8px', border: '1px solid #334155' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2 style={{ color: '#00ffcc', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Authentication Success!
+              {result.latencyMs && (
+                <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', color: '#94a3b8' }}>
+                  {result.latencyMs}ms ping
+                </span>
+              )}
+            </h2>
             {result.supabase_access_token && (
               <button
                 onClick={() => {
@@ -220,8 +227,8 @@ function Sandbox() {
                   setTimeout(() => setCopiedToken(false), 2000);
                 }}
                 style={{
-                  padding: '5px 10px', backgroundColor: copiedToken ? '#10b981' : '#333',
-                  color: '#fff', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer',
+                  padding: '5px 10px', backgroundColor: copiedToken ? '#10b981' : '#334155',
+                  color: '#fff', border: '1px solid #475569', borderRadius: '4px', cursor: 'pointer',
                   fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px',
                   transition: 'background-color 0.2s'
                 }}
@@ -232,10 +239,9 @@ function Sandbox() {
           </div>
           <p>Verified: {result.valid ? 'True' : 'False'}</p>
           {result.exp && <p>Expires: {new Date(result.exp * 1000).toLocaleString()}</p>}
-          <details style={{ marginTop: '1rem', border: '1px solid #333', borderRadius: '4px', padding: '0.5rem' }}>
-            <summary style={{ cursor: 'pointer', color: '#888', userSelect: 'none' }}>Inspector: Response Payload & Latency</summary>
-            <div style={{ marginTop: '10px', fontSize: '12px', color: '#ccc' }}>
-              <p><strong>Latency:</strong> {result.latencyMs ? `${result.latencyMs}ms` : 'N/A'}</p>
+          <details style={{ marginTop: '1rem', border: '1px solid #334155', borderRadius: '4px', padding: '0.5rem', backgroundColor: '#0f172a' }}>
+            <summary style={{ cursor: 'pointer', color: '#94a3b8', userSelect: 'none', fontWeight: 'bold' }}>JWT / Claims Inspector</summary>
+            <div style={{ marginTop: '10px', fontSize: '12px', color: '#cbd5e1' }}>
               <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto' }}>{JSON.stringify(result, null, 2)}</pre>
             </div>
           </details>

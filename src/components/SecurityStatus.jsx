@@ -29,7 +29,7 @@ function SecurityStatus({ readiness, errorWarning, connectionStatus }) {
     {
       icon: FiShield,
       label: 'Bot Protection',
-      value: readiness.turnstile ? 'Verified' : (readiness.turnstileState === 'blocked' ? 'Blocked' : (readiness.turnstileState === 'loading' ? 'Verifying...' : 'Challenge Required')),
+      value: readiness.turnstile ? 'Active' : (readiness.turnstileState === 'blocked' ? 'Blocked' : (readiness.turnstileState === 'loading' ? 'Verifying...' : (readiness.turnstileState === 'simulated' ? 'Bypass' : 'Challenge Required'))),
       color: readiness.turnstile ? 'text-emerald-400' : (readiness.turnstileState === 'blocked' ? 'text-rose-400' : 'text-amber-400')
     },
     {
