@@ -437,3 +437,32 @@ export function trackEvent(eventName, metadata = {}) {
     // Fail silently on telemetry errors
   }
 }
+
+/**
+ * Standardized helper for handling the AXiM Passport callback.
+ * Checks for a token in the URL, verifies it, cleans the URL, and returns the user object.
+ *
+ * @returns {Promise<Object|null>} The verified user object if successful, or null.
+ */
+export async function handlePassportCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (!token) return null;
+
+  try {
+    const workerUrl = import.meta.env.VITE_PASSPORT_EDGE_URL || 'https://passport.axim.us.com';
+    const res = await fetch(`${workerUrl}/api/v1/auth/verify-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    const data = await res.json();
+    if (data.valid) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return data.user;
+    }
+  } catch (err) {
+    console.error('Failed to handle Passport callback', err);
+  }
+  return null;
+}

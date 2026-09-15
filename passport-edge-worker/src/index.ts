@@ -509,12 +509,29 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
     return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
 
+
   let uuid;
   try {
-    uuid = await resolveUniversalId(address as string, env, "wallet", address as string);
+    const walletsRes = await fetch(env.SUPABASE_URL + '/rest/v1/user_wallets?address=eq.' + encodeURIComponent((address as string).toLowerCase()) + '&select=user_id', {
+      headers: {
+        'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY
+      }
+    });
+    if (walletsRes.ok) {
+      const data = await walletsRes.json() as any[];
+      if (data && data.length > 0 && data[0].user_id) {
+        uuid = data[0].user_id;
+      }
+    }
+
+    if (!uuid) {
+      uuid = await resolveUniversalId(address as string, env, "wallet", address as string);
+    }
   } catch (error) {
     return json(request, env, { error: 'Authentication could not be verified' }, 401);
   }
+
 
     const token = await mintHandoffToken(uuid, redirectUrl, env);
   log('wallet_authenticated', { chainId: Number(env.WALLET_CHAIN_ID) });
@@ -688,7 +705,7 @@ async function logoutEndpoint(request: Request, env: Env, body: Record<string, u
   return new Response(JSON.stringify({ success: true, message: 'Global session terminated' }), {
     headers: {
       'Content-Type': 'application/json; charset=UTF-8',
-      'Set-Cookie': 'axim_session=; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0'
+      'Set-Cookie': 'axim_session=; Domain=.axim.us.com; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly; SameSite=Lax'
     }
   });
 }
@@ -824,6 +841,18 @@ async function linkWalletEndpoint(request: Request, env: Env, ctx: ExecutionCont
       headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet_address: address.toLowerCase() })
     });
+
+    await fetch(env.SUPABASE_URL + '/rest/v1/user_wallets', {
+      method: 'POST',
+      headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify({ user_id: sub, address: address.toLowerCase(), chain_id: chainId })
+    });
+    await fetch(env.SUPABASE_URL + '/rest/v1/user_wallets', {
+      method: 'POST',
+      headers: { 'apikey': env.SUPABASE_SERVICE_ROLE_KEY, 'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify({ user_id: sub, address: address.toLowerCase(), chain_id: chainId })
+    });
+
   } catch(e) { return json(request, env, { error: 'Failed to update profile' }, 500); }
   ctx.waitUntil(dispatchCoreTelemetry(env, 'wallet.linked', { address, sub }, request.headers.get('x-axim-trace-id') || undefined));
   const newSessionToken = await mintSessionToken(sub, env);
