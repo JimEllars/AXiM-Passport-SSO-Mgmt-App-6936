@@ -97,8 +97,10 @@ The following GitHub Repository Secrets are required to authenticate with Cloudf
 The Pages workflow reads `SUPABASE_API_URL` and `SUPABASE_ANON_PUBLIC_KEY` from GitHub repository variables. Never allow its production build to fall back to mock values.
 
 There are two primary deployment workflows:
-1. **Edge Worker Deployment**: Triggers when files inside the `passport-edge-worker/` directory change on the `main` branch.
-2. **Frontend Pages Deployment**: Triggers when frontend files (e.g., `src/`, `package.json`, `index.html`) change on the `main` branch.
+1. **Edge API Worker Deployment**: Deploys the `axim-passport-api` Worker when files inside the `passport-edge-worker/` directory change on the `main` branch.
+2. **Frontend Pages Deployment**: Deploys the `axim-passport` Pages project when frontend build inputs change on the `main` branch. This includes source and public assets, package manifests and lockfile, Vite/PostCSS/Tailwind configuration, and its workflow configuration.
+
+The frontend is a **Cloudflare Pages project**, not the API Worker. Its deployment history is visible under Pages as `axim-passport`; the Worker dashboard’s `axim-passport-api` history only reflects API Worker releases. Any legacy Worker named `axim-passport` is not deployed by this repository.
 
 ## Deployment Log
 For a record of production secret injections and DNS verifications, please see [DEPLOYMENT_LOG.md](DEPLOYMENT_LOG.md).
