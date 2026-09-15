@@ -18,6 +18,7 @@
     "echarts": "^5.5.0",
     "echarts-for-react": "^3.0.2",
     "framer-motion": "^11.0.8",
+    "jimp": "^1.6.1",
     "react": "^18.0.0",
     "react-dom": "^18.3.1",
     "react-icons": "^5.4.0",
