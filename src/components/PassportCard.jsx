@@ -142,15 +142,17 @@ const CopyableId = ({ text, children }) => {
 
 
   const renderEcosystemLauncher = () => {
-    const apps = [
+        const apps = [
       { name: 'AXiM Core', url: 'https://core.axim.us.com', icon: FiGlobe },
-      { name: 'Web3 Frontend', url: 'https://axim.us.com', icon: FiHexagon },
+      { name: 'AXiM ARC Remote Command', url: 'https://arc.axim.us.com', icon: FiGlobe },
+      { name: 'AXiM Coding Lab', url: 'https://coder.axim.us.com', icon: FiGlobe },
+      { name: 'AXiM Support System', url: 'https://support.axim.us.com', icon: FiMail },
       { name: 'Green Machine', url: 'https://greenmachine.axim.us.com', icon: FiGlobe },
-      { name: 'Support System', url: 'https://support.axim.us.com', icon: FiMail },
-      { name: 'Coding Lab', url: 'https://coder.axim.us.com', icon: FiGlobe },
+      { name: 'Web3 Frontend', url: 'https://axim.us.com', icon: FiHexagon },
+      { name: 'Voice Core Hub', url: 'https://voice.axim.us.com', icon: FiGlobe },
+      { name: 'VendOS Fleet OS', url: 'https://vendos.axim.us.com', icon: FiGlobe },
       { name: 'Mesh Network', url: 'https://mesh.axim.us.com', icon: FiGlobe },
-      { name: 'VendOS Fleet', url: 'https://vendos.axim.us.com', icon: FiGlobe },
-      { name: 'Onyx Cockpit', url: 'https://onyx.axim.us.com', icon: FiGlobe }
+      { name: 'Asguard SOC Sentinel', url: 'https://asguard.axim.us.com', icon: FiGlobe }
     ];
 
     return (
