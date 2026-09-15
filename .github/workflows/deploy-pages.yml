@@ -6,9 +6,15 @@ on:
       - main
     paths:
       - 'src/**'
+      - 'public/**'
       - 'package.json'
+      - 'package-lock.json'
       - 'index.html'
       - 'vite.config.js'
+      - 'vite.sdk.config.js'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+      - '.github/workflows/deploy-pages.yml'
 
 jobs:
   deploy:
