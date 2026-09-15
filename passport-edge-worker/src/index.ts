@@ -1,10 +1,13 @@
 import { createErrorResponse } from "./error";
+import * as oidc from "./oidc";
 import { dispatchCoreTelemetry } from './telemetry';
 import { EmailDispatchManager } from './emailService';
 
 import { verifyMessage } from 'viem';
 
 export interface Env {
+  DB: D1Database;
+  KV_SESSIONS: KVNamespace;
   TURNSTILE_ENFORCEMENT_MODE?: string;
   PASSPORT_ANALYTICS?: any;
   AXIM_CORE_API_URL: string;
@@ -198,7 +201,7 @@ function base64UrlDecode(value: string): Uint8Array {
   return bytes;
 }
 
-async function verifyJwt(token: string, secret: string): Promise<Record<string, unknown> | null> {
+export async function verifyJwt(token: string, secret: string): Promise<Record<string, unknown> | null> {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
@@ -1614,6 +1617,23 @@ export default {
 
 
 
+
+    if (request.method === 'GET' && url.pathname === '/.well-known/openid-configuration') {
+      return await oidc.handleWellKnownOpenidConfiguration(request, env);
+    }
+    if (request.method === 'GET' && url.pathname === '/.well-known/jwks.json') {
+      return await oidc.handleWellKnownJwks(request, env);
+    }
+    if (request.method === 'GET' && url.pathname === '/oauth/authorize') {
+      return await oidc.handleOauthAuthorize(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/oauth/token') {
+      return await oidc.handleOauthToken(request, env);
+    }
+    if (request.method === 'GET' && url.pathname === '/api/oauth/userinfo') {
+      return await oidc.handleOauthUserinfo(request, env);
+    }
+
     if (request.method === 'GET' && url.pathname === '/login') {
       const redirectUri = url.searchParams.get('redirect_uri');
       const appId = url.searchParams.get('app_id') || 'unknown';
@@ -1760,12 +1780,83 @@ export default {
           return json(request, env, { success: true }, 202);
         }
 
+
+
+
         if (url.pathname === '/api/v1/auth/email/start') return await startEmailOtp(request, env, body);
         if (url.pathname === '/api/v1/auth/email/verify') return await verifyEmailOtp(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/link-provider') return await linkProviderEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/unlink-provider') return await unlinkProviderEndpoint(request, env, body);
       }
 
+      if (url.pathname.startsWith('/api/v1/apps')) {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return json(request, env, { error: 'Unauthorized' }, 401);
+        }
+        const token = authHeader.substring(7);
+        const payload = await verifyJwt(token, env.JWT_SECRET);
+        if (!payload) return json(request, env, { error: 'Invalid token' }, 401);
+        const userDid = payload.sub;
+
+        if (request.method === 'GET' && url.pathname === '/api/v1/apps') {
+            const result = await env.DB.prepare('SELECT id, client_id, name, redirect_uris, allowed_origins, created_at FROM apps WHERE owner_address = ?').bind(userDid).all();
+            return json(request, env, { apps: result.results });
+        }
+
+        if (request.method === 'POST' && url.pathname === '/api/v1/apps') {
+            const body = await request.json().catch(() => ({})) as any;
+            const id = crypto.randomUUID();
+            const clientId = 'client_' + Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+            const clientSecret = 'sec_' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
+
+            const encoder = new TextEncoder();
+            const data = encoder.encode(clientSecret);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const clientSecretHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            await env.DB.prepare('INSERT INTO apps (id, client_id, client_secret_hash, name, owner_address, redirect_uris, allowed_origins) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                .bind(id, clientId, clientSecretHash, body.name || 'New App', userDid, JSON.stringify(body.redirect_uris || []), JSON.stringify(body.allowed_origins || []))
+                .run();
+
+            return json(request, env, { app: { id, client_id: clientId, client_secret: clientSecret, name: body.name || 'New App' } });
+        }
+
+        if (request.method === 'DELETE' && url.pathname.match(/^\/api\/v1\/apps\/([a-zA-Z0-9-]+)$/)) {
+            const appId = url.pathname.split('/').pop();
+            await env.DB.prepare('DELETE FROM apps WHERE id = ? AND owner_address = ?').bind(appId, userDid).run();
+            return json(request, env, { success: true });
+        }
+
+        if (request.method === 'PUT' && url.pathname.match(/^\/api\/v1\/apps\/([a-zA-Z0-9-]+)$/)) {
+            const appId = url.pathname.split('/').pop();
+            const body = await request.json().catch(() => ({})) as any;
+            await env.DB.prepare('UPDATE apps SET name = ?, redirect_uris = ?, allowed_origins = ? WHERE id = ? AND owner_address = ?')
+                .bind(body.name, JSON.stringify(body.redirect_uris || []), JSON.stringify(body.allowed_origins || []), appId, userDid)
+                .run();
+            return json(request, env, { success: true });
+        }
+
+        if (request.method === 'POST' && url.pathname.match(/^\/api\/v1\/apps\/([a-zA-Z0-9-]+)\/secret$/)) {
+            const appId = url.pathname.split('/')[4];
+
+            // Check ownership
+            const check = await env.DB.prepare('SELECT id FROM apps WHERE id = ? AND owner_address = ?').bind(appId, userDid).first();
+            if (!check) return json(request, env, { error: 'Not found or unauthorized' }, 404);
+
+            const clientSecret = 'sec_' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
+            const encoder = new TextEncoder();
+            const data = encoder.encode(clientSecret);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const clientSecretHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            await env.DB.prepare('UPDATE apps SET client_secret_hash = ? WHERE id = ?').bind(clientSecretHash, appId).run();
+
+            return json(request, env, { client_secret: clientSecret });
+        }
+    }
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/session') return await handleSessionEndpoint(request, env);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/identities') return await listIdentitiesEndpoint(request, env);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return await startGoogle(request, env, url);

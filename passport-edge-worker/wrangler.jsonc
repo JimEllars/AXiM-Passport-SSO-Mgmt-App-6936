@@ -19,6 +19,14 @@
     "WALLET_CHAIN_ID": "1",
     "TURNSTILE_ACTION": "passport_auth"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "axim-passport-db",
+      "database_id": "mock-d1-id",
+      "migrations_dir": "migrations"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -35,6 +43,10 @@
     {
       "binding": "SECURITY_AUDIT_LOGS",
       "id": "a28f87960ebd4b20a0fa26ca28ecbcbd"
+    },
+    {
+      "binding": "KV_SESSIONS",
+      "id": "mock-kv-sessions-id"
     }
   ],
   "migrations": [

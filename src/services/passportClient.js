@@ -466,3 +466,146 @@ export async function handlePassportCallback() {
   }
   return null;
 }
+
+/**
+ * Creates an OIDC authorization URL for the application.
+ *
+ * @param {Object} params - The parameters.
+ * @param {string} params.clientId - The client ID of the application.
+ * @param {string} params.redirectUri - The allowed redirect URI.
+ * @param {string} [params.scope='openid profile email'] - Requested scopes.
+ * @param {string} [params.state] - Custom state string for CSRF protection.
+ * @param {string} params.codeChallenge - The PKCE code challenge.
+ * @param {string} [params.passportUrl] - The base URL of AXiM Passport.
+ * @returns {string} The formatted authorization URL.
+ */
+export function createAuthorizationUrl({ clientId, redirectUri, scope = 'openid profile email', state, codeChallenge, passportUrl }) {
+  const base = passportUrl || import.meta.env.VITE_PASSPORT_URL || 'https://passport.axim.us.com';
+  const url = new URL('/api/oauth/authorize', base);
+  // Actually the edge worker expects it at /oauth/authorize in some routing setups, let's use /oauth/authorize
+  const authUrl = new URL('/oauth/authorize', base);
+
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('scope', scope);
+  if (state) authUrl.searchParams.set('state', state);
+  if (codeChallenge) {
+    authUrl.searchParams.set('code_challenge', codeChallenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+  }
+
+  return authUrl.toString();
+}
+
+/**
+ * Exchanges an OIDC authorization code for tokens.
+ *
+ * @param {Object} params - The parameters.
+ * @param {string} params.code - The authorization code received from the callback.
+ * @param {string} params.codeVerifier - The original PKCE code verifier.
+ * @param {string} params.clientId - The client ID of the application.
+ * @param {string} params.redirectUri - The redirect URI used in the authorization request.
+ * @param {string} [params.workerUrl] - The edge worker URL.
+ * @returns {Promise<Object>} The token response containing access_token and id_token.
+ */
+export async function exchangeCode({ code, codeVerifier, clientId, redirectUri, workerUrl }) {
+  const base = workerUrl || import.meta.env.VITE_PASSPORT_EDGE_URL || 'https://passport.axim.us.com';
+  const url = `${base}/api/oauth/token`;
+
+  const formData = new URLSearchParams();
+  formData.append('grant_type', 'authorization_code');
+  formData.append('code', code);
+  formData.append('code_verifier', codeVerifier);
+  formData.append('client_id', clientId);
+  formData.append('redirect_uri', redirectUri);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: formData.toString()
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.message || `HTTP error ${res.status}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Opens a popup window for login and resolves with the authorization code payload.
+ *
+ * @param {Object} params - The parameters.
+ * @param {string} params.clientId - The client ID of the application.
+ * @param {string} [params.scopes] - Requested scopes.
+ * @returns {Promise<Object>} A promise resolving with the authorization code and state.
+ */
+export async function popupLogin({ clientId, scopes = 'openid profile email' }) {
+  // Generate PKCE
+  const codeVerifier = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(codeVerifier);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const codeChallenge = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  const state = crypto.randomUUID();
+  const redirectUri = window.location.origin + '/callback.html'; // Assuming a generic callback for popup
+
+  const url = createAuthorizationUrl({
+    clientId,
+    redirectUri,
+    scope: scopes,
+    state,
+    codeChallenge
+  });
+
+  const width = 500;
+  const height = 700;
+  const left = window.screen.width / 2 - width / 2;
+  const top = window.screen.height / 2 - height / 2;
+
+  const popup = window.open(url, 'axim_passport_login', `width=${width},height=${height},top=${top},left=${left}`);
+
+  return new Promise((resolve, reject) => {
+    const listener = (event) => {
+      // In a real implementation, you'd check event.origin
+      if (event.data && event.data.type === 'passport_authorization_response') {
+        window.removeEventListener('message', listener);
+        if (popup) popup.close();
+
+        if (event.data.error) {
+          reject(new Error(event.data.error));
+        } else if (event.data.state !== state) {
+          reject(new Error('State mismatch'));
+        } else {
+          resolve({
+            code: event.data.code,
+            state: event.data.state,
+            codeVerifier,
+            redirectUri
+          });
+        }
+      }
+    };
+
+    window.addEventListener('message', listener);
+
+    // Poll to see if popup closed early
+    const interval = setInterval(() => {
+      if (popup && popup.closed) {
+        clearInterval(interval);
+        window.removeEventListener('message', listener);
+        reject(new Error('Popup closed by user'));
+      }
+    }, 500);
+  });
+}
