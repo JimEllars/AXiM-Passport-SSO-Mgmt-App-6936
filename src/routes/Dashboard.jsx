@@ -174,8 +174,18 @@ function Dashboard() {
         )}
 
         {loading && apps.length === 0 ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {[1, 2].map(i => (
+              <div key={i} className="bg-white border border-gray-200 rounded-xl shadow-sm h-64 animate-pulse">
+                <div className="px-6 py-5 border-b border-gray-200 bg-gray-50 h-16"></div>
+                <div className="p-6 space-y-4">
+                  <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                  <div className="h-10 bg-gray-100 rounded w-full"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/4 mt-4"></div>
+                  <div className="h-10 bg-gray-100 rounded w-full"></div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : apps.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
