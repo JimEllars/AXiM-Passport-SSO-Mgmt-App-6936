@@ -452,7 +452,9 @@ test('Web3 wallet connect and signature mock handshake', async ({ page }) => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          status: 'operational',
+          status: 'healthy',
+          d1: true,
+          oidc: true,
           timestamp: '2026-09-13T00:00:00.000Z',
           version: '1.1.0',
           colo: 'SFO',
@@ -471,7 +473,9 @@ test('Web3 wallet connect and signature mock handshake', async ({ page }) => {
        return await req.json();
     });
 
-    expect(res.status).toBe('operational');
+    expect(res.status).toBe('healthy');
+    expect(res.d1).toBe(true);
+    expect(res.oidc).toBe(true);
     expect(res.kv_connectivity).toBe('connected');
     expect(res.edge_region).toBe('SFO');
   });
