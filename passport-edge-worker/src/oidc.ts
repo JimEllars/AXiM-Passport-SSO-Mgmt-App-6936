@@ -294,3 +294,42 @@ export async function handleOauthUserinfo(request: Request, env: Env) {
         wallet_address: session.walletAddress
     });
 }
+
+export async function handleOauthRevoke(request: Request, env: Env) {
+    if (request.method !== 'POST') {
+        return createErrorResponse('invalid_request', 'Method not allowed', 405);
+    }
+
+    const formData = await request.formData().catch(() => null);
+    let bodyData: any = {};
+    if (formData) {
+        for (const [key, value] of formData.entries()) {
+            bodyData[key] = value.toString();
+        }
+    } else {
+        bodyData = await request.json().catch(() => ({}));
+    }
+
+    const token = bodyData.token;
+    if (!token) {
+        return createErrorResponse('invalid_request', 'Missing token.', 400);
+    }
+
+    // Try to decode to get jti, if it's a JWT. If it's an opaque token from KV, just revoke it in KV.
+    try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+            const claims = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            if (claims.jti) {
+                await env.REVOCATION_KV.put(`revoked:${claims.jti}`, '1', { expirationTtl: 604800 });
+            }
+        } else {
+            // Assume it's an access token in KV_SESSIONS
+            await env.KV_SESSIONS.delete(`access:${token}`);
+        }
+    } catch (e) {
+        // Fallback or ignore parse errors
+    }
+
+    return Response.json({ revoked: true });
+}

@@ -330,10 +330,13 @@ async function verifyTurnstile(token: unknown, request: Request, env: Env): Prom
   if (ip) form.set('remoteip', ip);
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
     const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method: 'POST',
       body: form,
-    });
+      signal: controller.signal as any,
+    }).finally(() => clearTimeout(timeout));
 
     // Distinguish between actual rejection and timeout/5xx
     if (!response.ok) {
@@ -1632,6 +1635,7 @@ export default {
     }
     if (request.method === 'GET' && url.pathname === '/api/oauth/userinfo') {
       return await oidc.handleOauthUserinfo(request, env);
+    if (request.method === 'POST' && url.pathname === '/oauth/revoke') return await oidc.handleOauthRevoke(request, env);
     }
 
     if (request.method === 'GET' && url.pathname === '/login') {
@@ -1756,6 +1760,7 @@ export default {
         if (url.pathname === '/api/v1/auth/verify') return await verifyWallet(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/token/consume') return await consumeTokenEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/verify-token') return await verifyTokenEndpoint(request, env, ctx, body);
+        if (url.pathname === '/api/v1/auth/refresh') return await refreshEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/link-wallet') return await linkWalletEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/logout') return await logoutEndpoint(request, env, body, ctx);
         if (url.pathname === '/api/v1/telemetry') return await handleTelemetry(request, env, ctx, body);
@@ -1801,7 +1806,14 @@ export default {
 
         if (request.method === 'GET' && url.pathname === '/api/v1/apps') {
             const result = await env.DB.prepare('SELECT id, client_id, name, redirect_uris, allowed_origins, created_at FROM apps WHERE owner_address = ?').bind(userDid).all();
-            return json(request, env, { apps: result.results });
+            let auditLogs: any[] = [];
+            try {
+                const logs = await env.DB.prepare('SELECT * FROM audit_logs WHERE user_did = ? ORDER BY created_at DESC LIMIT 10').bind(userDid).all();
+                auditLogs = logs.results;
+            } catch (e) {
+                // Ignore if table doesn't exist
+            }
+            return json(request, env, { apps: result.results, audit_logs: auditLogs });
         }
 
         if (request.method === 'POST' && url.pathname === '/api/v1/apps') {
@@ -1863,6 +1875,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return await finishGoogle(request, env, ctx, url);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple') return await startApple(request, env, url);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple/callback') return await finishApple(request, env, ctx, url);
+      if (request.method === 'GET' && url.pathname === '/ready') return await readyEndpoint(request, env);
     } catch (e) {
       const err = e as Error;
       const traceId = request.headers.get('x-axim-trace-id');
@@ -1872,3 +1885,56 @@ export default {
     return json(request, env, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
   },
 };
+
+async function refreshEndpoint(request: Request, env: Env, ctx: ExecutionContext, body: any) {
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/axim_session=([^;]+)/);
+  let token = match ? match[1] : null;
+
+  if (!token) {
+    const authHeader = request.headers.get('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+  }
+
+  if (!token) {
+    return json(request, env, { success: false, error: 'Unauthorized' }, 401);
+  }
+
+  const payload = await verifyJwt(token, env.JWT_SECRET);
+  if (!payload) return json(request, env, { success: false, error: 'Invalid token' }, 401);
+
+  const revoked = await env.REVOCATION_KV.get(`revoked:${payload.jti}`);
+  if (revoked) return json(request, env, { success: false, error: 'Token revoked' }, 401);
+
+  const newSessionPayload = {
+    ...payload,
+    exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiry
+    jti: crypto.randomUUID()
+  };
+
+  delete (newSessionPayload as any).iat;
+
+  const newToken = await signJwt(newSessionPayload, env.JWT_SECRET);
+
+  ctx.waitUntil(dispatchCoreTelemetry(env, 'TOKEN_REFRESH', { userId: typeof payload.sub === 'string' ? payload.sub : undefined, method: 'refresh' }));
+
+  return new Response(JSON.stringify({ success: true, user: newSessionPayload }), {
+    status: 200,
+    headers: {
+      ...corsHeaders(request, env),
+      ...JSON_HEADERS,
+      'Set-Cookie': `axim_session=${newToken}; Domain=.axim.us.com; Path=/; Secure; HttpOnly; SameSite=Lax`
+    }
+  });
+}
+
+async function readyEndpoint(request: Request, env: Env) {
+  try {
+    await env.DB.prepare('SELECT 1').first();
+    return json(request, env, { status: 'ready', d1: 'connected', timestamp: Date.now() });
+  } catch (e) {
+    return json(request, env, { status: 'error', d1: 'disconnected', error: (e as Error).message }, 500);
+  }
+}
