@@ -36,9 +36,10 @@ export async function handleWellKnownOpenidConfiguration(request: Request, env: 
         code_challenge_methods_supported: ["S256"]
     }, {
         headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
-        }
+                'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Content-Type': 'application/json'
+            }
     });
 }
 
@@ -84,9 +85,10 @@ export async function handleWellKnownJwks(request: Request, env: Env) {
         keys: [jwk]
     }, {
         headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
-        }
+                'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Content-Type': 'application/json'
+            }
     });
 }
 
@@ -185,6 +187,64 @@ export async function handleOauthToken(request: Request, env: Env) {
     const clientId = bodyData.client_id;
     const redirectUri = bodyData.redirect_uri;
 
+        if (grantType === 'refresh_token') {
+        const refreshToken = bodyData.refresh_token;
+        const clientId = bodyData.client_id;
+
+        if (!refreshToken || !clientId) {
+            return createErrorResponse('invalid_request', 'Missing refresh_token or client_id.', 400);
+        }
+
+        const appInfo = await env.DB.prepare('SELECT * FROM apps WHERE client_id = ?').bind(clientId).first();
+        if (!appInfo) {
+            return createErrorResponse('invalid_client', 'Invalid client.', 401);
+        }
+
+        const sessionStr = await env.KV_SESSIONS.get(`refresh:${refreshToken}`);
+        if (!sessionStr) {
+            return createErrorResponse('invalid_grant', 'Invalid or expired refresh token.', 400);
+        }
+
+        const session = JSON.parse(sessionStr);
+        if (session.clientId !== clientId) {
+            return createErrorResponse('invalid_grant', 'Client mismatch.', 400);
+        }
+
+        // Rotate token
+        await env.KV_SESSIONS.delete(`refresh:${refreshToken}`);
+
+        const accessToken = crypto.randomUUID();
+        const newRefreshToken = crypto.randomUUID();
+
+        await env.KV_SESSIONS.put(`access:${accessToken}`, JSON.stringify({
+            sub: session.sub,
+            clientId,
+            email: session.email,
+            walletAddress: session.walletAddress
+        }), { expirationTtl: 3600 });
+
+        await env.KV_SESSIONS.put(`refresh:${newRefreshToken}`, JSON.stringify({
+            sub: session.sub,
+            clientId,
+            email: session.email,
+            walletAddress: session.walletAddress
+        }), { expirationTtl: 86400 * 30 }); // 30 days
+
+        return Response.json({
+            access_token: accessToken,
+            token_type: "Bearer",
+            expires_in: 3600,
+            refresh_token: newRefreshToken,
+            scope: "openid profile email"
+        }, {
+            headers: {
+                'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Content-Type': 'application/json'
+            }
+        });
+    }
+
     if (grantType !== 'authorization_code' || !code || !codeVerifier || !clientId || !redirectUri) {
         return createErrorResponse('invalid_request', 'Missing required parameters.', 400);
     }
@@ -281,7 +341,26 @@ export async function handleOauthUserinfo(request: Request, env: Env) {
     }
 
     const token = authHeader.substring(7);
-    const sessionStr = await env.KV_SESSIONS.get(`access:${token}`);
+    const revoked = await env.REVOCATION_KV.get(`revoked:${token}`);
+    if (revoked) {
+        return createErrorResponse('invalid_token', 'Token has been revoked.', 401);
+    }
+
+    let sessionStr = await env.KV_SESSIONS.get(`access:${token}`);
+    if (!sessionStr) {
+        // Fallback to check DB for long-lived active sessions if KV missed
+        try {
+            const dbSession = await env.DB.prepare('SELECT session_data FROM active_sessions WHERE access_token = ?').bind(token).first();
+            if (dbSession && dbSession.session_data) {
+                sessionStr = dbSession.session_data as string;
+                // Opportunistically restore to KV
+                if (sessionStr) await env.KV_SESSIONS.put(`access:${token}`, sessionStr as string, { expirationTtl: 3600 });
+            }
+        } catch(e) {
+            // table might not exist
+        }
+    }
+
     if (!sessionStr) {
         return createErrorResponse('invalid_token', 'Invalid or expired access token.', 401);
     }

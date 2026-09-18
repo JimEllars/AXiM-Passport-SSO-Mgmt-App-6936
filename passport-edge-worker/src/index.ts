@@ -284,6 +284,11 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
     if (isAximSubdomain || isPagesDev || isLocalhost || isFrontendOrigin || isAllowedRedirectOrigin || isInternalAiAgent) {
       headers.set('Access-Control-Allow-Origin', origin);
       headers.set('Access-Control-Allow-Credentials', 'true');
+    } else {
+      // If we reach here and a request is trying to authenticate, CORS should block it.
+      // We don't return arbitrary Origins for requests like /api/v1/auth/*
+      // This prevents wildcard-like behavior.
+      headers.set('Access-Control-Allow-Origin', 'null');
     }
   }
 
@@ -390,7 +395,7 @@ async function startWalletChallenge(request: Request, env: Env, body: Record<str
     return json(request, env, { error: 'Invalid authentication request' }, 400);
   }
   if (!await verifyTurnstile(turnstileToken, request, env)) {
-    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+    return createErrorResponse('TURNSTILE_FAILED', 'Turnstile verification failed', 403);
   }
 
   const nonce = crypto.randomUUID().replace(/-/g, '');
@@ -485,7 +490,7 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
     return json(request, env, { error: 'Invalid authentication request' }, 400);
   }
   if (!await verifyTurnstile(body.turnstileToken, request, env)) {
-    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+    return createErrorResponse('TURNSTILE_FAILED', 'Turnstile verification failed', 403);
   }
 
   const state = await stateRequest(env, 'consume', `wallet:${nonce}`);
@@ -1050,7 +1055,7 @@ async function startEmailOtp(request: Request, env: Env, body: Record<string, un
     return json(request, env, { error: 'Invalid authentication request' }, 400);
   }
   if (!await verifyTurnstile(turnstileToken, request, env)) {
-    return json(request, env, { error: 'Authentication could not be verified' }, 403);
+    return createErrorResponse('TURNSTILE_FAILED', 'Turnstile verification failed', 403);
   }
 
   const response = await fetch(new URL('/auth/v1/otp', env.SUPABASE_URL), {

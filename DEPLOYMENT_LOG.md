@@ -126,3 +126,23 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 **Quality Gates:**
 - Successfully completed `npm run lint`, `npm run build`, and `npm run build:sdk`.
 - `npx playwright test` assertions pass as expected.
+
+## Update: September 18, 2026 - Production Polish & Telemetry Activation
+
+**Changes Implemented:**
+- **Phase 1: Edge Security & Session Hardening:**
+  - `verifyTurnstile` strictly returns structured JSON errors.
+  - Implemented single-use refresh tokens leveraging KV deletion and recreation during the OAuth flow.
+  - Hardened `/oauth/userinfo` checking the `REVOCATION_KV` cache first before D1 database fallback.
+  - Hardened explicit domain CORS configurations.
+- **Phase 2: Telemetry Activation:**
+  - Expanded Cloudflare Analytics Engine `telemetry.ts` implementations with richer trace contexts (rayID, IP, Country)
+  - Constructed the robust non-blocking client-side telemetry reporting pipeline using `navigator.sendBeacon`.
+- **Phase 3: UI/UX Modernization & Enterprise Hardening:**
+  - Enhanced dashboard layout glassmorphism (slate 80%, blur md)
+  - Implemented UX loading skeletons and animated placeholders in `PassportCard` and `SecurityStatus` components to prevent layout shift.
+  - Injected an inline error recovery/retry mechanism inside `TurnstileBox`.
+
+**Quality Gates:**
+- Playwright E2E suites passing (`npm run test:e2e`).
+- Static type checking and `npm run lint` successful with zero errors.
