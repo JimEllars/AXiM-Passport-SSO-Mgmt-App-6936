@@ -103,3 +103,26 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - **UI Improvements**: Updated `PassportCard.jsx` and `SecurityStatus.jsx` to feature live countdowns, DID copy functionality, and responsive truncation. Also updated active UI states (scale animations, focus-visible outlines).
 - **Cross-Tab Sync**: Enhanced `optimistic_session` synchronization handling to fully broadcast log-in/log-out updates across browser contexts.
 - **Test Coverage**: Added synthetic Web3 wallet injection and 5xx network degradation mocking to Playwright E2E suites.
+
+## Update: Sprint 2.1 Backend Routes, D1 Audit Telemetry & Dashboard Dark UI
+
+**Date:** September 13, 2026
+
+**Changes Implemented:**
+- **Edge Routes:**
+  - Added `POST /api/v1/auth/refresh` for silent token refresh via `axim_session` cookie or Bearer token, which validates against `REVOCATION_KV` and issues a fresh 1-hour JWT.
+  - Added `GET /ready` as a system readiness probe, executing a simple D1 check.
+  - Added `POST /oauth/revoke` for RFC 7009 compliant token revocation, storing the token identifier in `REVOCATION_KV`.
+  - Added a 2500ms timeout (`AbortSignal.timeout(2500)`) on upstream Turnstile verification requests to prevent hanging authentication threads.
+- **Audit Telemetry:**
+  - Activated D1 audit telemetry in `telemetry.ts`. On events such as `AUTH_SUCCESS`, `TOKEN_REFRESH`, `SESSION_REVOKED`, and `TURNSTILE_FAILED`, records are asynchronously inserted into the `audit_logs` D1 table.
+- **Dashboard UI & Notifications:**
+  - Standardized the Developer Dashboard (`src/routes/Dashboard.jsx`) on a dark-mode glassmorphism theme (`bg-[#0A0D14]`, `bg-slate-900/60`, `border-slate-800`, `backdrop-blur-xl`, `text-slate-100`), aligning with `PassportCard.jsx`.
+  - Replaced native `window.confirm()` and `alert()` modals with `react-hot-toast` notifications.
+  - Added an interactive audit stream panel fetching recent logs and an active session panel with single-click revocation capabilities.
+- **Testing:**
+  - Expanded `tests/sandbox.spec.ts` with assertions verifying `POST /api/v1/auth/refresh`, `GET /ready`, and `POST /oauth/revoke` mocked network interactions.
+
+**Quality Gates:**
+- Successfully completed `npm run lint`, `npm run build`, and `npm run build:sdk`.
+- `npx playwright test` assertions pass as expected.

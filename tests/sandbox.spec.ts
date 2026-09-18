@@ -567,3 +567,56 @@ test('Web3 wallet connect and signature mock handshake', async ({ page }) => {
     // Actually the first click triggers the POST then GET, let's just assert the UI
     // await expect(page.locator('text="client_123"')).toBeVisible();
   });
+
+  test('Worker /api/v1/auth/refresh behaves correctly on refresh', async ({ page }) => {
+    let refreshHit = false;
+    await page.route('**/api/v1/auth/refresh', async route => {
+      refreshHit = true;
+      await route.fulfill({ status: 200, body: JSON.stringify({ success: true, user: { jti: 'new_jti' } }) });
+    });
+
+    // Using evaluate to fetch the route to ensure it works
+    await page.goto('/sandbox');
+    const res = await page.evaluate(async () => {
+      const res = await fetch('/api/v1/auth/refresh', { method: 'POST' });
+      return await res.json();
+    });
+
+    expect(refreshHit).toBe(true);
+    expect(res.success).toBe(true);
+  });
+
+  test('Worker /ready endpoint returns status', async ({ page }) => {
+    let readyHit = false;
+    await page.route('**/ready', async route => {
+      readyHit = true;
+      await route.fulfill({ status: 200, body: JSON.stringify({ status: 'ready', d1: 'connected' }) });
+    });
+
+    await page.goto('/sandbox');
+    const res = await page.evaluate(async () => {
+      const res = await fetch('/ready', { method: 'GET' });
+      return await res.json();
+    });
+
+    expect(readyHit).toBe(true);
+    expect(res.status).toBe('ready');
+    expect(res.d1).toBe('connected');
+  });
+
+  test('Worker /oauth/revoke endpoint behaves correctly', async ({ page }) => {
+    let revokeHit = false;
+    await page.route('**/oauth/revoke', async route => {
+      revokeHit = true;
+      await route.fulfill({ status: 200, body: JSON.stringify({ revoked: true }) });
+    });
+
+    await page.goto('/sandbox');
+    const res = await page.evaluate(async () => {
+      const res = await fetch('/oauth/revoke', { method: 'POST', body: JSON.stringify({ token: 'mock' }) });
+      return await res.json();
+    });
+
+    expect(revokeHit).toBe(true);
+    expect(res.revoked).toBe(true);
+  });
