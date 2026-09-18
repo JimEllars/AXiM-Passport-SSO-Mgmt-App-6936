@@ -155,6 +155,10 @@ function Sandbox() {
   }
 
   return (
+    <>
+    <style>
+        {".group:hover .group-hover-opacity { opacity: 1 !important; }"}
+    </style>
     <div style={{ padding: '2rem', color: '#fff', fontFamily: 'monospace' }}>
       <h1>Nexus CRM (Sandbox)</h1>
       <p>Simulated target application.</p>
@@ -219,13 +223,14 @@ function Sandbox() {
               )}
             </h2>
             {result.supabase_access_token && (
-              <button
+                            <button
                 onClick={() => {
                   navigator.clipboard.writeText(result.supabase_access_token);
                   setCopiedToken(true);
                   trackEvent('sso_token_copied');
                   setTimeout(() => setCopiedToken(false), 2000);
                 }}
+                className="group relative"
                 style={{
                   padding: '5px 10px', backgroundColor: copiedToken ? '#10b981' : '#334155',
                   color: '#fff', border: '1px solid #475569', borderRadius: '4px', cursor: 'pointer',
@@ -234,6 +239,12 @@ function Sandbox() {
                 }}
               >
                 {copiedToken ? 'Copied!' : 'Copy SSO Token'}
+                <span style={{
+                    position: 'absolute', top: '-30px', left: '50%', transform: 'translateX(-50%)',
+                    backgroundColor: '#1e293b', color: '#fff', fontSize: '10px', padding: '4px 8px',
+                    borderRadius: '4px', opacity: 0, transition: 'opacity 0.2s', pointerEvents: 'none',
+                    border: '1px solid #475569', whiteSpace: 'nowrap'
+                }} className="group-hover-opacity">Click to copy token</span>
               </button>
             )}
           </div>
@@ -295,7 +306,8 @@ function Sandbox() {
           </pre>
         </div>
       </div>
-    </div>
+        </div>
+    </>
   );
 }
 
