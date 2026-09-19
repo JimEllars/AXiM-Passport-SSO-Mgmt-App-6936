@@ -329,8 +329,23 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
 
     refreshTimeoutId = setTimeout(async () => {
       try {
-        const res = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
+        const res = await fetch('https://passport.axim.us.com/api/v1/auth/refresh', { method: 'POST', credentials: 'include', headers: getTracingHeaders() });
         if (!res.ok && res.status >= 500) {
+           throw new Error('Server Error');
+        }
+        if (res.ok) {
+           const data = await res.json();
+           if(data.success && data.user) {
+             onAuthenticated(data.user);
+             sessionStorage.setItem('passport_session_claims', JSON.stringify(data.user));
+             scheduleRefresh(data.user, 0);
+             return;
+           }
+        }
+
+        // Fallback to check session
+        const sessionRes = await fetch('https://passport.axim.us.com/api/v1/auth/session', { credentials: 'include', headers: getTracingHeaders() });
+        if (!sessionRes.ok && sessionRes.status >= 500) {
            throw new Error('Server Error');
         }
         const data = await res.json();
@@ -354,6 +369,7 @@ export async function initAximPassport({ onAuthenticated, onUnauthenticated }) {
           }
         }
       } catch (e) {
+         trackEvent('client_network_failure', { error: e.message });
          const cached = sessionStorage.getItem('passport_session_claims');
          if (cached) {
             const parsed = JSON.parse(cached);

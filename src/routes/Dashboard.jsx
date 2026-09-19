@@ -274,9 +274,12 @@ Save this now!`, { duration: 10000 });
                     <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Client ID</label>
                     <div className="flex items-center bg-[#0A0D14] p-2.5 rounded border border-slate-800 font-mono text-sm">
                       <span className="flex-1 truncate">{app.client_id}</span>
-                      <button onClick={() => copyToClipboard(app.client_id, app.client_id)} className="ml-2 text-slate-500 hover:text-slate-400">
+
+                      <button onClick={() => copyToClipboard(app.client_id, app.client_id)} className="ml-2 text-slate-500 hover:text-slate-400 group relative">
                         {copied === app.client_id ? <SafeIcon icon={FiCheck} className="text-green-500" /> : <SafeIcon icon={FiCopy} />}
+                        <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow">Copy</span>
                       </button>
+
                     </div>
                   </div>
 

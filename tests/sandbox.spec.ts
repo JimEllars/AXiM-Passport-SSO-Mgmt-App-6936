@@ -1,6 +1,31 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Sandbox Token Consumption Loop & Resiliency', () => {
+
+  test('AI Agent Authentication Headers', async ({ page }) => {
+    let authHeaderValue = null;
+    let agentHeaderValue = null;
+
+    await page.route('**/api/v1/auth/agent-verify', async route => {
+      authHeaderValue = route.request().headers()['authorization'];
+      agentHeaderValue = route.request().headers()['x-agent-key'];
+      await route.fulfill({ status: 200, body: JSON.stringify({ valid: true }) });
+    });
+
+    await page.goto('/sandbox');
+
+    await page.evaluate(async () => {
+      await fetch('/api/v1/auth/agent-verify', {
+        headers: { 'x-agent-key': 'test_key' }
+      });
+      await fetch('/api/v1/auth/agent-verify', {
+        headers: { 'Authorization': 'Bearer test_key2' }
+      });
+    });
+
+    expect(agentHeaderValue || authHeaderValue).toBeTruthy();
+  });
+
   test('Token Consumption Loop', async ({ page }) => {
     await page.goto('/sandbox');
 

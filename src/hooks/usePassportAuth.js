@@ -167,7 +167,7 @@ function usePassportAuth(redirectUrl) {
                  setSession(data.user);
                  retryCount = 0;
                }
-            }).catch(scheduleRetry);
+            }).catch((e) => { trackEvent('client_network_failure', { error: e.message }); scheduleRetry(); });
         } else if (res.status >= 500) {
            scheduleRetry();
         } else {
@@ -176,7 +176,7 @@ function usePassportAuth(redirectUrl) {
               localStorage.removeItem('optimistic_session');
            }
         }
-      }).catch(scheduleRetry);
+      }).catch((e) => { trackEvent('client_network_failure', { error: e.message }); scheduleRetry(); });
     };
 
     const scheduleRetry = () => {
@@ -275,15 +275,18 @@ const [selectedMethod, setSelectedMethod] = useState('');
       }
 
       trackEvent('auth_initiated', { method: 'google' });
+publishTelemetry('auth_initiated', { method: 'google' });
       window.location.assign(getGoogleAuthUrl(redirectUrl, turnstileToken));
     } catch (authenticationError) {
       if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
         publishTelemetry('unauthorized_access', { method: 'google' });
+publishTelemetry('login_failure', { method: 'google', reason: 'unauthorized_access' });
         fail('SECURITY_LOCKOUT');
       } else if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
         fail('Authentication was cancelled. Please try again.', true);
       } else {
         publishTelemetry('auth_error', { method: 'google', error: authenticationError.message });
+publishTelemetry('login_failure', { method: 'google', error: authenticationError.message });
         fail(authenticationError.message || 'Google authentication failed.');
       }
     }
@@ -308,15 +311,18 @@ const [selectedMethod, setSelectedMethod] = useState('');
       }
 
       trackEvent('auth_initiated', { method: 'apple' });
+publishTelemetry('auth_initiated', { method: 'apple' });
       window.location.assign(getAppleAuthUrl(redirectUrl, turnstileToken));
     } catch (authenticationError) {
       if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
         publishTelemetry('unauthorized_access', { method: 'apple' });
+publishTelemetry('login_failure', { method: 'apple', reason: 'unauthorized_access' });
         fail('SECURITY_LOCKOUT');
       } else if (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel')) {
         fail('Authentication was cancelled. Please try again.');
       } else {
         publishTelemetry('auth_error', { method: 'apple', error: authenticationError.message });
+publishTelemetry('login_failure', { method: 'apple', error: authenticationError.message });
         fail(authenticationError.message || 'Apple authentication failed.');
       }
     }
@@ -360,6 +366,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
 
       const startTime = Date.now();
       trackEvent('auth_initiated', { method: 'email' });
+publishTelemetry('auth_initiated', { method: 'email' });
       const res = await startEmailOtp(email, redirectUrl, turnstileToken);
       const latency = Date.now() - startTime;
       if (res.traceId) window.sessionStorage.setItem('axim_trace_id', res.traceId);
@@ -370,6 +377,7 @@ const [selectedMethod, setSelectedMethod] = useState('');
       resetVerification();
     } catch (error) {
        publishTelemetry('auth_error', { method: 'email', error: error.message });
+publishTelemetry('login_failure', { method: 'email', error: error.message });
        fail(error.message || 'Failed to send OTP.');
     }
   }, [busy, verificationStage, selectMethod, ensureReady, turnstileToken, redirectUrl, emailState, resetVerification, fail]);
@@ -387,6 +395,7 @@ const startWallet = useCallback(async () => {
       if (!pendingWallet) {
         const wallet = await getWalletAccount();
         trackEvent('auth_initiated', { method: 'wallet' });
+publishTelemetry('auth_initiated', { method: 'wallet' });
         const challenge = await requestWalletChallenge({
           address: wallet.address,
           chainId: wallet.chainId,
@@ -431,6 +440,7 @@ const startWallet = useCallback(async () => {
       if (authenticationError.message && authenticationError.message.includes('403 Forbidden')) {
         const address = pendingWallet?.wallet?.address;
         publishTelemetry('unauthorized_access', { method: 'wallet', address });
+publishTelemetry('login_failure', { method: 'wallet', reason: 'unauthorized_access', address });
         fail('SECURITY_LOCKOUT');
       } else if (authenticationError.code === 4001 || (authenticationError.message && authenticationError.message.toLowerCase().includes('cancel'))) {
         fail('Wallet signature was cancelled. Please try again.', true);
@@ -520,6 +530,7 @@ const startWallet = useCallback(async () => {
 
   const handleTurnstileError = useCallback((message, isTransient = false) => {
     trackEvent('turnstile_failed', { error: message, isTransient });
+publishTelemetry('turnstile_challenge_failed', { error: message, isTransient });
     setTurnstileTokenState('');
     if (!isTransient) {
       setError(message || 'Security verification failed. Try again.');

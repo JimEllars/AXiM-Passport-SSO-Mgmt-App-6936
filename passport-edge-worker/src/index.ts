@@ -1583,8 +1583,60 @@ export default {
   },
 
   async handleFetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-
     const url = new URL(request.url);
+    // AI Agent Authentication
+    const agentKeyHeader = request.headers.get('x-agent-key');
+    const authHeader = request.headers.get('Authorization');
+    let agentKey = agentKeyHeader;
+    if (!agentKey && authHeader && authHeader.startsWith('Bearer ')) {
+       // Only treat as agent key if it doesn't look like a JWT (no dots)
+       const tokenStr = authHeader.substring(7);
+       if (!tokenStr.includes('.')) {
+          agentKey = tokenStr;
+       }
+    }
+
+    if (agentKey) {
+        // Fast path for agents using D1 with KV caching
+        const cacheKey = `agent_key:${agentKey}`;
+        let validAgent = await env.KV_SESSIONS.get(cacheKey);
+
+        if (!validAgent) {
+           const encoder = new TextEncoder();
+           const data = encoder.encode(agentKey);
+           const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+           const hashArray = Array.from(new Uint8Array(hashBuffer));
+           const keyHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+           try {
+              const agentRecord = await env.DB.prepare('SELECT id, name, scopes FROM agent_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > datetime("now"))').bind(keyHash).first();
+              if (agentRecord) {
+                 validAgent = JSON.stringify(agentRecord);
+                 await env.KV_SESSIONS.put(cacheKey, validAgent, { expirationTtl: 300 }); // Cache for 5 mins
+              }
+           } catch(e) {
+              // Table might not exist yet
+           }
+        }
+
+        if (validAgent) {
+           const agentData = JSON.parse(validAgent);
+           ctx.waitUntil(dispatchCoreTelemetry(env, 'agent_key_authenticated', { agentId: agentData.id, name: agentData.name, scopes: agentData.scopes }, request.headers.get('x-axim-trace-id') || undefined));
+
+           // If it's just a validation request or we are appending claims, we could do it here.
+           // For now, if the path requires agent auth, it passes.
+           if (url.pathname === '/api/v1/auth/agent-verify') {
+               return json(request, env, { valid: true, agent: agentData });
+           }
+        } else {
+           ctx.waitUntil(dispatchCoreTelemetry(env, 'agent_key_failed', { reason: 'invalid_key' }, request.headers.get('x-axim-trace-id') || undefined));
+           if (url.pathname === '/api/v1/auth/agent-verify') {
+               return json(request, env, { error: 'Unauthorized' }, 401);
+           }
+        }
+    }
+
+
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request, env) });
 
 
@@ -1717,14 +1769,26 @@ export default {
       });
     }
 
+
     if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/health') {
+      let isStorageHealthy = false;
+      try {
+        await env.DB.prepare('SELECT 1').first();
+        isStorageHealthy = true;
+      } catch (e) {}
+
+      let turnstileStatus = 'active';
+      if (!env.TURNSTILE_ACTION) turnstileStatus = 'not_configured';
+
       return json(request, env, {
         status: 'ok',
         timestamp: Date.now(),
         version: '1.0.0',
         bindings: {
           kv: !!env.REVOCATION_KV,
-          analytics: !!env.PASSPORT_ANALYTICS || !!env.ANALYTICS
+          analytics: !!env.PASSPORT_ANALYTICS || !!env.ANALYTICS,
+          d1_connected: isStorageHealthy,
+          turnstile: turnstileStatus
         }
       });
     }
@@ -1771,20 +1835,30 @@ export default {
         if (url.pathname === '/api/v1/telemetry') return await handleTelemetry(request, env, ctx, body);
 
         if (url.pathname === '/api/telemetry/events') {
-          // Fire and forget
+          // Rate limit check
+          const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+          if (!checkRateLimit(ip)) {
+             return json(request, env, { error: 'Too Many Requests' }, 429);
+          }
+
+          // Handle array of events (batching)
+          const events = Array.isArray(body) ? body : [body];
+
           ctx.waitUntil((async () => {
-             try {
-               const payload = {
-                 event: body.event,
-                 timestamp: body.timestamp || new Date().toISOString(),
-                 traceId: request.headers.get('x-axim-trace-id') || undefined,
-                 ...body
-               };
-               if (typeof payload.event === 'string') {
-                 await dispatchCoreTelemetry(env, payload.event, payload as any, payload.traceId);
+             for (const item of events) {
+               try {
+                 const payload = {
+                   event: item.event,
+                   timestamp: item.timestamp || new Date().toISOString(),
+                   traceId: request.headers.get('x-axim-trace-id') || item.traceId || undefined,
+                   ...item
+                 };
+                 if (typeof payload.event === 'string') {
+                   await dispatchCoreTelemetry(env, payload.event, payload as any, payload.traceId);
+                 }
+               } catch(e) {
+                 console.info(JSON.stringify({ error: "Telemetry fallback", payload: item }));
                }
-             } catch(e) {
-               console.info(JSON.stringify({ error: "Telemetry fallback", payload: body }));
              }
           })());
           return json(request, env, { success: true }, 202);
