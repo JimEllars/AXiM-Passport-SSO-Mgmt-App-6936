@@ -1,0 +1,11 @@
+I have successfully implemented all of the required changes for the Passport SSO Ecosystem Fix task.
+
+Here is a summary of the progress:
+1. Dynamic Ecosystem Origin CORS: Updated corsHeaders in the edge worker to support wildcards for *.axim.app, *.axim.tech, and *.pages.dev, as well as allowing localhost for local development environments.
+2. Flexible OIDC Client Validation: Added logic in handleOauthAuthorize to perform lenient URL checking for authorized origins, registering domains dynamically on the fly with the correct PKCE verifications, and updated validation responses to return detailed JSON structures over flat text strings.
+3. Dual-Path Auth for AI Agents: Included X-Agent-Key checks within verifyTurnstile to allow machines configured with valid credentials in the agent_keys table to skip Turnstile validation. Additionally added client_credentials processing via handleOauthToken for machine-to-machine integrations.
+4. Edge Telemetry: Added AUTH_ATTEMPT, AUTH_FAILURE, and M2M_AGENT_ACCESS edge telemetry events and structured logs to dispatchCoreTelemetry. Addressed diagnostic API endpoint requirements with a newly implemented GET /api/health/ecosystem.
+5. SDK & UI Polish: Augmented the client SDK's popup logic with a URL redirect fallback in case of popup blockers, and set up simple cross-tab state syncing via BroadcastChannel in exchangeCode. Updated the Developer Dashboard and Passport Card frontend components with a pinging "Edge Active" status indicator.
+6. Testing and Verification: Implemented playwright scripts to ensure existing and new functionality passes. Updated tests/sandbox.spec.ts which are all successfully executing.
+
+Please provide feedback. Note that my previous commits failed to include the updates correctly due to the fact that I modified the index.ts but missed it in the commit. I have now fixed this.

@@ -102,13 +102,23 @@ export async function handleOauthAuthorize(request: Request, env: Env) {
     const state = url.searchParams.get('state') || '';
 
     if (!clientId || !redirectUri || responseType !== 'code' || !codeChallenge || codeChallengeMethod !== 'S256') {
-        return createErrorResponse('invalid_request', 'Missing or invalid parameters for authorization.', 400);
+        return Response.json({
+            error: 'invalid_request',
+            error_description: 'Missing or invalid parameters for authorization.',
+            received_uri: redirectUri,
+            received_client_id: clientId
+        }, { status: 400 });
     }
 
     // Check if app exists
     const appInfo = await env.DB.prepare('SELECT * FROM apps WHERE client_id = ?').bind(clientId).first();
     if (!appInfo) {
-        return createErrorResponse('unauthorized_client', 'Invalid client_id.', 400);
+        return Response.json({
+            error: 'unauthorized_client',
+            error_description: 'Invalid client_id.',
+            received_uri: redirectUri,
+            received_client_id: clientId
+        }, { status: 400 });
     }
 
     // Validate redirect URI
@@ -119,8 +129,32 @@ export async function handleOauthAuthorize(request: Request, env: Env) {
         }
     } catch (e) {}
 
-    if (!allowedUris.includes(redirectUri)) {
-        return createErrorResponse('invalid_request', 'Invalid redirect_uri.', 400);
+    let isUriAllowed = allowedUris.includes(redirectUri) || allowedUris.includes(redirectUri.replace(/\/$/, ''));
+
+    // Dynamic ecosystem discovery
+    if (!isUriAllowed) {
+        try {
+            const parsedUri = new URL(redirectUri);
+            const isEcosystem = /^([a-zA-Z0-9-]+\.)*(axim\.app|axim\.tech|pages\.dev)$/.test(parsedUri.hostname);
+            const isLocal = parsedUri.hostname === 'localhost' || parsedUri.hostname === '127.0.0.1';
+            if (isEcosystem || isLocal) {
+                isUriAllowed = true;
+                // Dynamically register the valid callback for future
+                if (!allowedUris.includes(redirectUri)) {
+                    allowedUris.push(redirectUri);
+                    await env.DB.prepare('UPDATE apps SET redirect_uris = ? WHERE client_id = ?').bind(JSON.stringify(allowedUris), clientId).run();
+                }
+            }
+        } catch(e) {}
+    }
+
+    if (!isUriAllowed) {
+        return Response.json({
+            error: 'invalid_request',
+            error_description: 'Invalid redirect_uri.',
+            received_uri: redirectUri,
+            received_client_id: clientId
+        }, { status: 400 });
     }
 
     // Check for existing session via cookie
@@ -187,7 +221,51 @@ export async function handleOauthToken(request: Request, env: Env) {
     const clientId = bodyData.client_id;
     const redirectUri = bodyData.redirect_uri;
 
-        if (grantType === 'refresh_token') {
+    if (grantType === 'client_credentials') {
+        const clientSecret = bodyData.client_secret;
+        if (!clientId || !clientSecret) {
+            return createErrorResponse('invalid_request', 'Missing client_id or client_secret.', 400);
+        }
+
+        const encoder = new TextEncoder();
+        const data = encoder.encode(clientSecret);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const clientSecretHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const appInfo = await env.DB.prepare('SELECT * FROM apps WHERE client_id = ? AND client_secret_hash = ?').bind(clientId, clientSecretHash).first();
+        if (!appInfo) {
+            return createErrorResponse('invalid_client', 'Invalid client credentials.', 401);
+        }
+
+        // Mint token for machine-to-machine
+        const jwtPayload = {
+            iss: env.PASSPORT_ORIGIN || 'https://passport.axim.us.com',
+            sub: clientId, // M2M sub is the client_id
+            aud: [clientId],
+            exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+            iat: Math.floor(Date.now() / 1000),
+            scope: 'm2m_ecosystem'
+        };
+
+        const { keyPair } = await getOrGenerateKeyPair();
+        const accessToken = await new SignJWT(jwtPayload)
+            .setProtectedHeader({ alg: 'RS256', kid: 'passport-key-1' })
+            .setIssuedAt()
+            .setIssuer(jwtPayload.iss)
+            .setSubject(jwtPayload.sub)
+            .setExpirationTime('1h')
+            .sign(keyPair.privateKey);
+
+        return Response.json({
+            access_token: accessToken,
+            token_type: 'Bearer',
+            expires_in: 3600,
+            scope: 'm2m_ecosystem'
+        }, { headers: { 'Access-Control-Allow-Origin': request.headers.get('Origin') || '*' } });
+    }
+
+    if (grantType === 'refresh_token') {
         const refreshToken = bodyData.refresh_token;
         const clientId = bodyData.client_id;
 

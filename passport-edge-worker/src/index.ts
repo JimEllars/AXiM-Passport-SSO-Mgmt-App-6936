@@ -256,8 +256,8 @@ function frontendOrigins(env: Env): string[] {
 
 function corsHeaders(request: Request, env: Env): HeadersInit {
   const headers = new Headers({
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-axim-trace-id, x-correlation-id',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Agent-Key, x-axim-trace-id, x-correlation-id',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, x-axim-trace-id, x-correlation-id',
     'Access-Control-Max-Age': '86400',
     'Access-Control-Allow-Credentials': 'true',
@@ -266,30 +266,39 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
 
   const origin = request.headers.get('Origin');
   if (origin) {
+    let isAllowed = false;
+
+    // Check specific domains
     const isAximSubdomain = /^https:\/\/([a-zA-Z0-9-]+\.)*axim\.us\.com(:[0-9]+)?(\/.*)?$/.test(origin);
-    const isPagesDev = origin === 'https://axim-passport.pages.dev';
     const isInternalAiAgent = origin === 'https://internal-ai-agent.axim.us.com' || origin === 'http://internal-ai-agent.axim.us.com';
+
+    // Wildcard matches
+    const isEcosystem = /^https:\/\/([a-zA-Z0-9-]+\.)*(axim\.app|axim\.tech)(:[0-9]+)?(\/.*)?$/.test(origin);
+    const isPagesDev = /^https:\/\/([a-zA-Z0-9-]+\.)*pages\.dev(:[0-9]+)?(\/.*)?$/.test(origin);
 
     let isLocalhost = false;
     try {
       const url = new URL(origin);
-      isLocalhost = env.ENVIRONMENT === 'development' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+      isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
     } catch {
-      // Ignore URL parsing errors for origin
+      // Ignore URL parsing errors
     }
 
     const isFrontendOrigin = frontendOrigins(env).includes(origin);
     const isAllowedRedirectOrigin = env.ALLOWED_REDIRECT_ORIGINS.split(',').map(o => originFrom(o.trim())).includes(origin);
 
-    if (isAximSubdomain || isPagesDev || isLocalhost || isFrontendOrigin || isAllowedRedirectOrigin || isInternalAiAgent) {
+    if (isAximSubdomain || isEcosystem || isPagesDev || isLocalhost || isInternalAiAgent || isFrontendOrigin || isAllowedRedirectOrigin) {
+      isAllowed = true;
+    }
+
+    if (isAllowed) {
       headers.set('Access-Control-Allow-Origin', origin);
       headers.set('Access-Control-Allow-Credentials', 'true');
     } else {
-      // If we reach here and a request is trying to authenticate, CORS should block it.
-      // We don't return arbitrary Origins for requests like /api/v1/auth/*
-      // This prevents wildcard-like behavior.
-      headers.set('Access-Control-Allow-Origin', 'null');
+      headers.set('Access-Control-Allow-Origin', env.PASSPORT_ORIGIN || '*');
     }
+  } else {
+    headers.set('Access-Control-Allow-Origin', env.PASSPORT_ORIGIN || '*');
   }
 
   return headers;
@@ -326,6 +335,24 @@ async function stateRequest(env: Env, operation: 'put' | 'consume' | 'consumeTok
 }
 
 async function verifyTurnstile(token: unknown, request: Request, env: Env): Promise<boolean> {
+  // Agent / Bypass Logic
+  const agentKey = request.headers.get('X-Agent-Key') || (request.headers.get('Authorization') && request.headers.get('Authorization')?.startsWith('Bearer ') ? request.headers.get('Authorization')?.substring(7) : null);
+  if (agentKey) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(agentKey);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const keyHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    try {
+      const agentRecord = await env.DB.prepare('SELECT id FROM agent_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > datetime("now"))').bind(keyHash).first();
+      if (agentRecord) {
+        return true; // Valid agent bypasses turnstile
+      }
+    } catch (e) {
+      // Ignore DB errors and fall back to Turnstile
+    }
+  }
+
   if (typeof token !== 'string' || token.length === 0 || token.length > 2048) return false;
 
   const form = new FormData();
@@ -1639,6 +1666,49 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request, env) });
 
+
+    if (request.method === 'GET' && url.pathname === '/api/health/ecosystem') {
+      const agentKey = request.headers.get('X-Agent-Key') || (request.headers.get('Authorization') && request.headers.get('Authorization')?.startsWith('Bearer ') ? request.headers.get('Authorization')?.substring(7) : null);
+      if (!agentKey || agentKey !== env.ADMIN_API_KEY) {
+         let validAgent = false;
+         if (agentKey) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(agentKey);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const keyHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            try {
+               const agentRecord = await env.DB.prepare('SELECT id FROM agent_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > datetime("now"))').bind(keyHash).first();
+               if (agentRecord) validAgent = true;
+            } catch(e) {}
+         }
+         if (!validAgent) return json(request, env, { success: false, error: 'Unauthorized' }, 401);
+      }
+
+      let dbConnected = false;
+      let appCount = 0;
+      let agentCount = 0;
+      try {
+         const dbCheck = await env.DB.prepare('SELECT count(*) as c FROM apps').first();
+         if (dbCheck) {
+            dbConnected = true;
+            appCount = (dbCheck as any).c;
+         }
+         const agentCheck = await env.DB.prepare('SELECT count(*) as c FROM agent_keys').first();
+         if (agentCheck) agentCount = (agentCheck as any).c;
+      } catch(e) {
+         dbConnected = false;
+      }
+
+      return json(request, env, {
+         status: 'healthy',
+         d1_connected: dbConnected,
+         kv_connected: true,
+         registered_apps: appCount,
+         registered_agents: agentCount,
+         timestamp: new Date().toISOString()
+      });
+    }
 
     if (request.method === 'GET' && url.pathname === '/api/v1/telemetry/health-stats') {
       const authHeader = request.headers.get('Authorization');
