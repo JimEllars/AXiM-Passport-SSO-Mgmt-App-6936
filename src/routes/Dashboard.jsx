@@ -16,14 +16,32 @@ function Dashboard() {
   const [revoking, setRevoking] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [telemetryHealth, setTelemetryHealth] = useState(null);
 
   const workerUrl = import.meta.env.VITE_PASSPORT_EDGE_URL || 'https://passport.axim.us.com';
+
+
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch(`${workerUrl}/api/telemetry/health`, {
+        headers: { 'Authorization': `Bearer ${auth.session.access_token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTelemetryHealth(data);
+      }
+    } catch(e) { /* ignore */ }
+  };
 
   useEffect(() => {
     if (auth.session) {
       fetchApps();
+      fetchHealth();
+      const iv = setInterval(fetchHealth, 10000);
+      return () => clearInterval(iv);
     }
   }, [auth.session]);
+
 
   const fetchApps = async () => {
     try {
@@ -187,6 +205,45 @@ Save this now!`, { duration: 10000 });
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+
+            <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-xl p-6 shadow-sm flex flex-col">
+                <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2"><SafeIcon icon={FiActivity} /> Edge Telemetry & Security</h3>
+                {telemetryHealth ? (
+                  <div className="flex-1 flex flex-col justify-between">
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-sm text-slate-400">Status</span>
+                       <span className="text-sm text-emerald-400 font-bold uppercase">{telemetryHealth.status}</span>
+                     </div>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-sm text-slate-400">Region</span>
+                       <span className="text-sm text-slate-200">{telemetryHealth.edge_region}</span>
+                     </div>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-sm text-slate-400">Avg Latency</span>
+                       <span className="text-sm text-slate-200">{telemetryHealth.latency_estimate_ms}ms</span>
+                     </div>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-sm text-slate-400">Active Sessions</span>
+                       <span className="text-sm text-blue-400 font-bold">{telemetryHealth.metrics?.active_sessions || 0}</span>
+                     </div>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-sm text-slate-400">Auth Success (1h)</span>
+                       <span className="text-sm text-emerald-400">{telemetryHealth.metrics?.auth_success_1h || 0}</span>
+                     </div>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-sm text-slate-400">Auth Failures (1h)</span>
+                       <span className="text-sm text-rose-400">{telemetryHealth.metrics?.auth_failures_1h || 0}</span>
+                     </div>
+                     <div className="flex justify-between items-center">
+                       <span className="text-sm text-slate-400">Turnstile</span>
+                       <span className="text-sm text-emerald-400">{telemetryHealth.metrics?.turnstile_operational ? 'Operational' : 'Degraded'}</span>
+                     </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 italic flex-1 flex items-center justify-center">Loading telemetry...</p>
+                )}
+            </div>
+
             <div className="lg:col-span-2 bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-xl p-6 shadow-sm flex flex-col">
                 <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2"><SafeIcon icon={FiActivity} /> Audit Stream</h3>
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2" style={{ maxHeight: '200px' }}>

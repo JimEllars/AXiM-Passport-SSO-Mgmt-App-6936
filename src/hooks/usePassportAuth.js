@@ -144,48 +144,102 @@ function usePassportAuth(redirectUrl) {
   useEffect(() => {
     if (!session || !session.exp) return;
     const expMs = session.exp * 1000;
-    let timeUntilRefresh = expMs - Date.now() - 300000; // 5 minutes before expiration as per prompt
 
-    if (timeUntilRefresh <= 0) {
-      timeUntilRefresh = 1000; // if already past buffer, run quickly
-    }
+    // Trigger 60s before expiry
+    const timeUntilRefresh = expMs - Date.now() - 60000;
 
-    let retryCount = 0;
     let timeoutId;
 
-    const attemptRefresh = () => {
-      fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include'
-      }).then(res => {
-        if (res.ok) {
-          fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/session`, { credentials: 'include' })
-            .then(r => r.json())
-            .then(data => {
-               if (data.authenticated) {
+    const attemptRefresh = async () => {
+      // Single-flight lock handled at module level below or we can use window.aximRefreshPromise
+      if (window.aximRefreshPromise) {
+          try {
+             const data = await window.aximRefreshPromise;
+             if (data && data.user) {
                  localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
                  setSession(data.user);
-                 retryCount = 0;
+             }
+          } catch(e) { /* ignore */  /* ignore */ }
+          return;
+      }
+
+      window.aximRefreshPromise = (async () => {
+         let attempt = 0;
+         const maxRetries = 3;
+         while (attempt <= maxRetries) {
+            try {
+               const traceId = crypto.randomUUID();
+               const res = await fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/refresh`, {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'x-correlation-id': traceId,
+                    'x-axim-trace-id': traceId
+                  }
+               });
+
+               if (res.ok) {
+                  const data = await res.json();
+                  if (data.success && data.user) {
+                     return data;
+                  }
                }
-            }).catch((e) => { trackEvent('client_network_failure', { error: e.message }); scheduleRetry(); });
-        } else if (res.status >= 500) {
-           scheduleRetry();
-        } else {
-           if (res.status === 401) {
-              setSession(null);
-              localStorage.removeItem('optimistic_session');
-           }
-        }
-      }).catch((e) => { trackEvent('client_network_failure', { error: e.message }); scheduleRetry(); });
+
+               if (res.status === 401 || res.status === 403) {
+                  localStorage.removeItem('optimistic_session');
+                  setSession(null);
+                  setIdentities([]);
+                  return null;
+               }
+
+               if (res.status >= 500) {
+                  throw new Error('Server Error');
+               }
+
+               throw new Error('Unknown Error');
+            } catch (e) {
+               if (attempt === maxRetries) {
+                  const onOnline = async () => {
+                     window.removeEventListener('online', onOnline);
+                     attemptRefresh();
+                  };
+                  window.addEventListener('online', onOnline);
+                  return null;
+               }
+            }
+
+            attempt++;
+            const backoff = Math.pow(2, attempt - 1) * 1000;
+            const jitter = Math.floor(Math.random() * 500) - 250;
+            await new Promise(r => setTimeout(r, backoff + jitter));
+         }
+         return null;
+      })();
+
+      try {
+         const data = await window.aximRefreshPromise;
+         if (data && data.user) {
+            localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
+            setSession(data.user);
+            try {
+               if (window.BroadcastChannel) {
+                   const bc = new BroadcastChannel('axim_passport_auth');
+                   bc.postMessage({ type: 'session_refreshed', user: data.user });
+                   bc.close();
+               }
+            } catch(e) { /* ignore */  /* ignore */ }
+         }
+      } catch(e) { /* ignore */
+      } finally {
+         window.aximRefreshPromise = null;
+      }
     };
 
-    const scheduleRetry = () => {
-       retryCount++;
-       const backoff = Math.min(Math.pow(2, retryCount) * 1000, 30000); // Max 30s backoff
-       timeoutId = setTimeout(attemptRefresh, backoff);
-    };
-
-    timeoutId = setTimeout(attemptRefresh, timeUntilRefresh);
+    if (timeUntilRefresh <= 0) {
+       attemptRefresh();
+    } else {
+       timeoutId = setTimeout(attemptRefresh, timeUntilRefresh);
+    }
 
     return () => clearTimeout(timeoutId);
   }, [session]);
