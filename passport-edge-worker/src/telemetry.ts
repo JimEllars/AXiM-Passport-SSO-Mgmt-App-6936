@@ -125,13 +125,31 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
     }
 
     // Diagnostic structured log requested by milestone
-    console.log(JSON.stringify({
+    const eventLog: any = {
       timestamp: structuredPayload.timestamp,
       request_id: traceId || structuredPayload.rayId,
       colo: structuredPayload.colo,
       status_code: structuredPayload.statusCode,
       event: eventType
-    }));
+    };
+
+    // Add specific fields based on event type for Edge Telemetry
+    if (eventType === 'AUTH_ATTEMPT') {
+      eventLog.client_id = payload.clientId || payload.clientAppId;
+      eventLog.origin = payload.origin;
+      eventLog.user_agent = payload.userAgent;
+      eventLog.flow_type = payload.flowType;
+    } else if (eventType === 'AUTH_FAILURE') {
+      eventLog.error_code = payload.errorCode || payload.statusCode;
+      eventLog.reason = payload.reason;
+      eventLog.origin = payload.origin;
+    } else if (eventType === 'M2M_AGENT_ACCESS') {
+      eventLog.key_id = payload.keyId || payload.agentId;
+      eventLog.permissions = payload.scopes;
+      eventLog.target_resource = payload.route || payload.targetResource;
+    }
+
+    console.log(JSON.stringify(eventLog));
 
 
     try {

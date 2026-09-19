@@ -549,7 +549,22 @@ export async function exchangeCode({ code, codeVerifier, clientId, redirectUri, 
     throw new Error(errorData.message || `HTTP error ${res.status}`);
   }
 
-  return res.json();
+  const data = await res.json();
+
+  // Safe cross-tab sync
+  try {
+    if (window.BroadcastChannel) {
+        const bc = new BroadcastChannel('axim_passport_channel');
+        bc.postMessage({ type: 'tokens_updated', data });
+        bc.close();
+    }
+    // Also use localStorage events for older browsers / cross-origin if set up
+    localStorage.setItem('axim_passport_sync', JSON.stringify({ time: Date.now(), type: 'tokens_updated' }));
+  } catch(e) {
+    console.error(e);
+  }
+
+  return data;
 }
 
 /**
@@ -590,6 +605,15 @@ export async function popupLogin({ clientId, scopes = 'openid profile email' }) 
   const top = window.screen.height / 2 - height / 2;
 
   const popup = window.open(url, 'axim_passport_login', `width=${width},height=${height},top=${top},left=${left}`);
+
+  // Fallback to full redirect if popup blocker is detected
+  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    // Save PKCE verifier to session storage for the redirect callback
+    sessionStorage.setItem('passport_pkce_verifier', codeVerifier);
+    sessionStorage.setItem('passport_auth_state', state);
+    window.location.href = url;
+    return new Promise(() => {}); // Never resolves as it redirects
+  }
 
   return new Promise((resolve, reject) => {
     const listener = (event) => {
