@@ -184,6 +184,34 @@ function Sandbox() {
       )}
 
 
+
+      <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '4px', border: '1px solid #334155' }}>
+        <h3 style={{ margin: '0 0 1rem 0', color: '#94a3b8' }}>Agent Verification Harness</h3>
+        <p style={{ color: '#cbd5e1', fontSize: '12px', marginBottom: '1rem' }}>Simulate autonomous AI agent requests using an agent key.</p>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+           <input type="text" id="agentKeyInput" placeholder="Enter Agent Key (sk_...)" style={{ flex: 1, padding: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+           <button onClick={async () => {
+              const key = document.getElementById('agentKeyInput').value;
+              if (!key) return alert('Enter key');
+              try {
+                 const res = await fetch(`${workerUrl}/api/v1/auth/agent-verify`, {
+                    headers: { 'Authorization': `Bearer ${key}` }
+                 });
+                 if (res.ok) {
+                    const data = await res.json();
+                    alert('Verified Agent: ' + JSON.stringify(data.agent));
+                 } else {
+                    alert('Failed: ' + res.statusText);
+                 }
+              } catch (e) {
+                 alert('Error: ' + e.message);
+              }
+           }} style={{ padding: '8px 12px', backgroundColor: '#0ea5e9', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+             Verify Scope
+           </button>
+        </div>
+      </div>
+
       <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#1e293b', borderRadius: '4px', border: '1px solid #334155' }}>
         <h3 style={{ margin: '0 0 1rem 0', color: '#94a3b8' }}>Simulation Controls (Dev Only)</h3>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
