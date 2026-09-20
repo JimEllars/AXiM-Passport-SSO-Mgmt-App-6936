@@ -196,6 +196,29 @@ export async function dispatchCoreTelemetry(env: Env, eventType: string, payload
       eventLog.key_id = payload.keyId || payload.agentId;
       eventLog.permissions = payload.scopes;
       eventLog.target_resource = payload.route || payload.targetResource;
+
+      // Also log into audit_logs table
+      try {
+        if (env.DB) {
+          await env.DB.prepare('INSERT INTO audit_logs (id, user_did, event, ip_address, user_agent, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), 'agent_' + (payload.agentId || 'unknown'), 'M2M_AGENT_ACCESS', structuredPayload.clientIp, 'agent', JSON.stringify({ scopes: payload.scopes, route: payload.route }), structuredPayload.timestamp)
+            .run();
+        }
+      } catch (e) {
+        console.error('Failed to log M2M access to D1', e);
+      }
+    } else if (eventType === 'FRONTEND_TELEMETRY' || eventType.startsWith('frontend.')) {
+      eventLog.client_details = payload.details;
+
+      try {
+        if (env.DB) {
+           await env.DB.prepare('INSERT INTO audit_logs (id, user_did, event, ip_address, user_agent, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), payload.userId || 'anonymous', eventType, structuredPayload.clientIp, payload.userAgent || 'unknown', JSON.stringify(payload), structuredPayload.timestamp)
+            .run();
+        }
+      } catch (e) {
+        console.error('Failed to log frontend telemetry to D1', e);
+      }
     }
 
     console.log(JSON.stringify(eventLog));

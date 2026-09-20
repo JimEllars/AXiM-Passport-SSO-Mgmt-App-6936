@@ -334,18 +334,26 @@ async function stateRequest(env: Env, operation: 'put' | 'consume' | 'consumeTok
   return (await response.json<{ record: AuthRecord | null }>()).record;
 }
 
-async function verifyTurnstile(token: unknown, request: Request, env: Env): Promise<boolean> {
+async function verifyTurnstile(token: unknown, request: Request, env: Env, ctx?: ExecutionContext): Promise<boolean> {
   // Agent / Bypass Logic
   const agentKey = request.headers.get('X-Agent-Key') || (request.headers.get('Authorization') && request.headers.get('Authorization')?.startsWith('Bearer ') ? request.headers.get('Authorization')?.substring(7) : null);
+  const reqIp = request.headers.get('cf-connecting-ip') || 'unknown';
   if (agentKey) {
+    if (!checkRateLimit(reqIp)) {
+      return false;
+    }
     const encoder = new TextEncoder();
     const data = encoder.encode(agentKey);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const keyHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     try {
-      const agentRecord = await env.DB.prepare('SELECT id FROM agent_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > datetime("now"))').bind(keyHash).first();
+      const agentRecord = await env.DB.prepare('SELECT id, scopes FROM agent_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > datetime("now"))').bind(keyHash).first();
       if (agentRecord) {
+        if (ctx) {
+           ctx.waitUntil(dispatchCoreTelemetry(env, 'M2M_AGENT_ACCESS', { agentId: agentRecord.id as string, scopes: agentRecord.scopes, clientIp: reqIp, timestamp: new Date().toISOString() }));
+           recordAuditEvent({ env, executionCtx: ctx }, { eventType: 'M2M_AGENT_ACCESS', appId: agentRecord.id as string, status: 200, ipCountry: request.headers.get('cf-ipcountry') || 'unknown', scopes: agentRecord.scopes });
+        }
         return true; // Valid agent bypasses turnstile
       }
     } catch (e) {
@@ -421,7 +429,7 @@ async function startWalletChallenge(request: Request, env: Env, body: Record<str
   if (!redirectUrl || typeof address !== 'string' || !ETHEREUM_ADDRESS.test(address) || chainId !== requiredChainId) {
     return json(request, env, { error: 'Invalid authentication request' }, 400);
   }
-  if (!await verifyTurnstile(turnstileToken, request, env)) {
+  if (!await verifyTurnstile(turnstileToken, request, env, (request as any).ctx)) {
     return createErrorResponse('TURNSTILE_FAILED', 'Turnstile verification failed', 403);
   }
 
@@ -516,7 +524,7 @@ async function verifyWallet(request: Request, env: Env, ctx: ExecutionContext, b
   ) {
     return json(request, env, { error: 'Invalid authentication request' }, 400);
   }
-  if (!await verifyTurnstile(body.turnstileToken, request, env)) {
+  if (!await verifyTurnstile(body.turnstileToken, request, env, (request as any).ctx)) {
     return createErrorResponse('TURNSTILE_FAILED', 'Turnstile verification failed', 403);
   }
 
@@ -901,7 +909,7 @@ async function linkWalletEndpoint(request: Request, env: Env, ctx: ExecutionCont
 
 async function startGoogle(request: Request, env: Env, url: URL): Promise<Response> {
   const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
-  if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
+  if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env, (request as any).ctx)) {
     return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
@@ -991,7 +999,7 @@ async function finishGoogle(request: Request, env: Env, ctx: ExecutionContext, u
 
 async function startApple(request: Request, env: Env, url: URL): Promise<Response> {
   const redirectUrl = approvedRedirect(env, url.searchParams.get('redirect'));
-  if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env)) {
+  if (!redirectUrl || !await verifyTurnstile(url.searchParams.get('turnstile_token'), request, env, (request as any).ctx)) {
     return createErrorResponse('AUTH_FAILED', 'Authentication could not be verified', 403);
   }
 
@@ -1081,7 +1089,7 @@ async function startEmailOtp(request: Request, env: Env, body: Record<string, un
   if (!redirectUrl || typeof email !== 'string') {
     return json(request, env, { error: 'Invalid authentication request' }, 400);
   }
-  if (!await verifyTurnstile(turnstileToken, request, env)) {
+  if (!await verifyTurnstile(turnstileToken, request, env, (request as any).ctx)) {
     return createErrorResponse('TURNSTILE_FAILED', 'Turnstile verification failed', 403);
   }
 
@@ -1899,7 +1907,7 @@ export default {
 
         if (url.pathname === '/api/v1/auth/turnstile-verify') {
            const body = await request.json().catch(() => ({})) as any;
-           const isValid = await verifyTurnstile(body.turnstileToken, request, env);
+           const isValid = await verifyTurnstile(body.turnstileToken, request, env, (request as any).ctx);
            const ipCountry = request.headers.get('cf-ipcountry') || 'unknown';
 
            recordAuditEvent({ env, executionCtx: ctx }, {
