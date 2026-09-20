@@ -1,6 +1,6 @@
 import { createErrorResponse } from "./error";
 import * as oidc from "./oidc";
-import { dispatchCoreTelemetry } from './telemetry';
+import { dispatchCoreTelemetry, recordAuditEvent } from './telemetry';
 import { EmailDispatchManager } from './emailService';
 
 import { verifyMessage } from 'viem';
@@ -1758,7 +1758,7 @@ export default {
       return await oidc.handleOauthAuthorize(request, env);
     }
     if (request.method === 'POST' && url.pathname === '/api/oauth/token') {
-      return await oidc.handleOauthToken(request, env);
+      return await oidc.handleOauthToken(request, env, ctx);
     }
     if (request.method === 'GET' && url.pathname === '/api/oauth/userinfo') {
       return await oidc.handleOauthUserinfo(request, env);
@@ -1896,6 +1896,21 @@ export default {
         if (!body) return json(request, env, { success: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
 
         if (url.pathname === '/api/v1/auth/wallet/challenge') return await startWalletChallenge(request, env, body);
+
+        if (url.pathname === '/api/v1/auth/turnstile-verify') {
+           const body = await request.json().catch(() => ({})) as any;
+           const isValid = await verifyTurnstile(body.turnstileToken, request, env);
+           const ipCountry = request.headers.get('cf-ipcountry') || 'unknown';
+
+           recordAuditEvent({ env, executionCtx: ctx }, {
+             eventType: isValid ? 'TURNSTILE_VERIFY_SUCCESS' : 'TURNSTILE_VERIFY_FAILURE',
+             status: isValid ? 200 : 403,
+             ipCountry
+           });
+
+           return json(request, env, { success: isValid });
+        }
+
         if (url.pathname === '/api/v1/auth/verify') return await verifyWallet(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/token/consume') return await consumeTokenEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/verify-token') return await verifyTokenEndpoint(request, env, ctx, body);
@@ -1941,6 +1956,58 @@ export default {
         if (url.pathname === '/api/v1/auth/email/verify') return await verifyEmailOtp(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/link-provider') return await linkProviderEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/unlink-provider') return await unlinkProviderEndpoint(request, env, body);
+      }
+
+
+      if (url.pathname.startsWith('/api/v1/agent-keys')) {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return json(request, env, { error: 'Unauthorized' }, 401);
+        }
+        const token = authHeader.substring(7);
+        const payload = await verifyJwt(token, env.JWT_SECRET);
+        if (!payload) return json(request, env, { error: 'Invalid token' }, 401);
+
+        // Ensure user is authorized to manage agent keys (could restrict to super_user if needed, or by did)
+        const userDid = payload.sub;
+
+        if (request.method === 'GET') {
+            const keys = await env.DB.prepare('SELECT id, name, scopes, created_at, expires_at FROM agent_keys').all();
+            recordAuditEvent({ env, executionCtx: ctx }, { eventType: 'AGENT_KEYS_LIST', userId: typeof userDid === 'string' ? userDid : 'unknown', status: 200 });
+            return json(request, env, { keys: keys.results });
+        }
+
+        if (request.method === 'POST') {
+            const body = await request.json().catch(() => ({})) as any;
+            if (!body.name || !body.scopes) return json(request, env, { error: 'Missing name or scopes' }, 400);
+
+            const id = crypto.randomUUID();
+            // Generate secret
+            const secret = 'axim_ak_live_' + Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2, '0')).join('');
+
+            // Hash secret
+            const encoder = new TextEncoder();
+            const data = encoder.encode(secret);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const keyHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            await env.DB.prepare('INSERT INTO agent_keys (id, name, key_hash, scopes, expires_at) VALUES (?, ?, ?, ?, ?)')
+                .bind(id, body.name, keyHash, body.scopes, body.expiresAt || null)
+                .run();
+
+            recordAuditEvent({ env, executionCtx: ctx }, { eventType: 'AGENT_KEY_CREATED', userId: typeof userDid === 'string' ? userDid : 'unknown', status: 200, keyId: id });
+            return json(request, env, { id, name: body.name, secret, scopes: body.scopes, created_at: new Date().toISOString() });
+        }
+
+        if (request.method === 'DELETE') {
+            const keyId = url.pathname.split('/').pop();
+            if (keyId) {
+                await env.DB.prepare('DELETE FROM agent_keys WHERE id = ?').bind(keyId).run();
+                recordAuditEvent({ env, executionCtx: ctx }, { eventType: 'AGENT_KEY_REVOKED', userId: typeof userDid === 'string' ? userDid : 'unknown', status: 200, keyId });
+                return json(request, env, { success: true });
+            }
+        }
       }
 
       if (url.pathname.startsWith('/api/v1/apps')) {

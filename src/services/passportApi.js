@@ -351,3 +351,43 @@ export async function verifyEmailOtp(email, token, nonce) {
   const result = await post('/api/v1/auth/email/verify', { email, token, nonce });
   return result;
 }
+
+export async function listAgentKeys() {
+  requireWorker();
+  const token = window.localStorage.getItem('passport_token');
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${workerUrl}/api/v1/agent-keys`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error('Failed to list agent keys');
+  const data = await res.json();
+  return data.keys;
+}
+
+export async function generateAgentKey({ name, scopes, expiresAt }) {
+  requireWorker();
+  const token = window.localStorage.getItem('passport_token');
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${workerUrl}/api/v1/agent-keys`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, scopes, expiresAt })
+  });
+  if (!res.ok) throw new Error('Failed to create agent key');
+  return await res.json();
+}
+
+export async function revokeAgentKey(keyId) {
+  requireWorker();
+  const token = window.localStorage.getItem('passport_token');
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${workerUrl}/api/v1/agent-keys/${keyId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error('Failed to revoke agent key');
+  return await res.json();
+}

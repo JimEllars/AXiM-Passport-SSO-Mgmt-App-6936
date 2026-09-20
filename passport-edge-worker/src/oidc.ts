@@ -1,3 +1,4 @@
+import { recordAuditEvent } from './telemetry';
 import { Env } from './index';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { createErrorResponse } from './error';
@@ -200,7 +201,7 @@ export async function handleOauthAuthorize(request: Request, env: Env) {
     return Response.redirect(redirectUrl.toString(), 302);
 }
 
-export async function handleOauthToken(request: Request, env: Env) {
+export async function handleOauthToken(request: Request, env: Env, ctx: ExecutionContext) {
     if (request.method !== 'POST') {
         return createErrorResponse('invalid_request', 'Method not allowed', 405);
     }
@@ -224,6 +225,7 @@ export async function handleOauthToken(request: Request, env: Env) {
     if (grantType === 'client_credentials') {
         const clientSecret = bodyData.client_secret;
         if (!clientId || !clientSecret) {
+            recordAuditEvent({ env, executionCtx: ctx }, { eventType: 'OAUTH_TOKEN_FAILURE', appId: clientId, status: 400, reason: 'Missing client_id or client_secret' });
             return createErrorResponse('invalid_request', 'Missing client_id or client_secret.', 400);
         }
 
@@ -235,6 +237,7 @@ export async function handleOauthToken(request: Request, env: Env) {
 
         const appInfo = await env.DB.prepare('SELECT * FROM apps WHERE client_id = ? AND client_secret_hash = ?').bind(clientId, clientSecretHash).first();
         if (!appInfo) {
+            recordAuditEvent({ env, executionCtx: ctx }, { eventType: 'OAUTH_TOKEN_FAILURE', appId: clientId, status: 401, reason: 'Invalid client credentials' });
             return createErrorResponse('invalid_client', 'Invalid client credentials.', 401);
         }
 
@@ -336,6 +339,7 @@ export async function handleOauthToken(request: Request, env: Env) {
     // Get session
     const sessionStr = await env.KV_SESSIONS.get(`code:${code}`);
     if (!sessionStr) {
+        recordAuditEvent({ env, executionCtx: ctx }, { eventType: 'OAUTH_TOKEN_FAILURE', appId: clientId, status: 400, reason: 'Invalid or expired authorization code' });
         return createErrorResponse('invalid_grant', 'Invalid or expired authorization code.', 400);
     }
 
