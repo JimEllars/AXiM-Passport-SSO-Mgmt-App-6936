@@ -214,7 +214,8 @@ function usePassportAuth(redirectUrl) {
                    break;
                }
                // Wait before retry
-               await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+               const backoff = Math.min(2000 * Math.pow(2, attempt), 8000);
+               await new Promise(resolve => setTimeout(resolve, backoff));
             }
          }
       })();
@@ -244,7 +245,11 @@ function usePassportAuth(redirectUrl) {
         setIdentities([]);
       }
     } else {
-      timeoutId = setTimeout(attemptRefresh, timeUntilRefresh);
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        timeoutId = setTimeout(() => window.requestIdleCallback(() => attemptRefresh()), timeUntilRefresh);
+      } else {
+        timeoutId = setTimeout(attemptRefresh, timeUntilRefresh);
+      }
     }
 
     return () => clearTimeout(timeoutId);

@@ -1,0 +1,31 @@
+<<<<<<< SEARCH
+    newHeaders.set('x-axim-trace-id', traceId);
+    newHeaders.set('x-correlation-id', correlationId);
+    newHeaders.set('Server-Timing', `edge;dur=${duration}`);
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders
+    });
+=======
+    newHeaders.set('x-axim-trace-id', traceId);
+    newHeaders.set('x-correlation-id', correlationId);
+    newHeaders.set('Server-Timing', `edge;dur=${duration}`);
+    newHeaders.set('x-execution-time', duration.toString());
+
+    const rayId = request.headers.get('cf-ray');
+    if (rayId) newHeaders.set('cf-ray', rayId);
+
+    // Cloudflare Edge PoP logic is accessible via request.cf if we pass it correctly (but request is standard, we must fetch from request.cf which is a Cloudflare extension)
+    const colo = (request as any).cf?.colo;
+    if (colo) newHeaders.set('cf-colo', colo);
+
+    newHeaders.set('access-control-expose-headers', 'cf-ray, cf-colo, x-execution-time');
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders
+    });
+>>>>>>> REPLACE

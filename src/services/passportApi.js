@@ -195,7 +195,7 @@ function flushTelemetry() {
   telemetryTimeout = null;
 
   try {
-    const targetUrl = `${workerUrl}/api/telemetry/events`;
+    const targetUrl = `${workerUrl}/api/telemetry/beacon`;
     const bodyStr = JSON.stringify(batch);
 
     // Attempt to use navigator.sendBeacon
@@ -217,6 +217,10 @@ function flushTelemetry() {
       // Ignore telemetry errors silently so as not to disrupt user flow
     });
   } catch (e) { /* ignore */ }
+}
+
+export function reportClientTelemetry(eventType, payload = {}) {
+  emitTelemetryEvent(eventType, payload);
 }
 
 export function publishTelemetry(event, payload = {}) {

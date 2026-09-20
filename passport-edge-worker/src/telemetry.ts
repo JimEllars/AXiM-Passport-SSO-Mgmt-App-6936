@@ -64,6 +64,12 @@ export function recordAuditEvent(c: { env: Env, executionCtx: ExecutionContext }
         });
       } else {
         console.info(JSON.stringify(payload));
+        // Fallback to D1 persistence if Analytics Engine is missing
+        if (c.env.DB) {
+           c.env.DB.prepare('INSERT INTO audit_logs (id, user_did, event, ip_address, user_agent, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), payload.userId, payload.eventType, 'unknown', 'system', JSON.stringify(payload), timestamp)
+            .run().catch((err: any) => console.error(JSON.stringify({ type: 'audit_telemetry_d1_fallback_error', error: err.message })));
+        }
       }
     } catch (e) {
       console.error(JSON.stringify({ type: 'audit_telemetry_error', error: (e as Error).message }));
