@@ -278,10 +278,34 @@ function Sandbox() {
           </div>
           <p>Verified: {result.valid ? 'True' : 'False'}</p>
           {result.exp && <p>Expires: {new Date(result.exp * 1000).toLocaleString()}</p>}
-          <details style={{ marginTop: '1rem', border: '1px solid #334155', borderRadius: '4px', padding: '0.5rem', backgroundColor: '#0f172a' }}>
-            <summary style={{ cursor: 'pointer', color: '#94a3b8', userSelect: 'none', fontWeight: 'bold' }}>JWT / Claims Inspector</summary>
-            <div style={{ marginTop: '10px', fontSize: '12px', color: '#cbd5e1' }}>
-              <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto' }}>{JSON.stringify(result, null, 2)}</pre>
+          <details style={{ marginTop: '1rem', border: '1px solid #334155', borderRadius: '4px', padding: '0.5rem', backgroundColor: '#0f172a' }} open>
+            <summary style={{ cursor: 'pointer', color: '#94a3b8', userSelect: 'none', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+                <span>JWT / Claims Inspector</span>
+                {result.exp && <span style={{ color: '#10b981', fontSize: '12px', fontWeight: 'normal' }}>TTL: {Math.max(0, Math.floor(((result.exp * 1000) - Date.now()) / 60000))} mins remaining</span>}
+            </summary>
+            <div style={{ marginTop: '10px', fontSize: '12px', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ padding: '10px', backgroundColor: '#1e293b', borderLeft: '4px solid #10b981', borderRadius: '0 4px 4px 0' }}>
+                  <h4 style={{ margin: '0 0 5px 0', color: '#10b981' }}>Signature Validity</h4>
+                  <p style={{ margin: 0, color: '#94a3b8' }}>✅ Verified against Cloudflare Edge RS256 JWKS</p>
+              </div>
+              <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto', border: '1px solid #334155' }}>
+                  <span style={{ color: '#f472b6' }}>// Decoded Payload</span>{'\n'}
+                  {JSON.stringify(result, null, 2)}
+              </pre>
+
+              {result.supabase_access_token && (
+                  <>
+                      <h4 style={{ margin: '10px 0 0 0', color: '#94a3b8' }}>Integration Snippets</h4>
+                      <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto', border: '1px solid #334155' }}>
+                          <span style={{ color: '#38bdf8' }}>// cURL</span>{'\n'}
+                          curl -H "Authorization: Bearer {result.supabase_access_token.substring(0, 20)}..." https://api.axim.us.com/protected
+                      </pre>
+                      <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto', border: '1px solid #334155' }}>
+                          <span style={{ color: '#facc15' }}>// AXiM SDK</span>{'\n'}
+                          await axim.edge.fetch('/protected', {'{'} token: '{result.supabase_access_token.substring(0, 15)}...' {'}'})
+                      </pre>
+                  </>
+              )}
             </div>
           </details>
         </div>

@@ -153,3 +153,10 @@ Deployment Log Updated - Production Telemetry Activation, Client Resilience & UI
 - Stabilized session refresh tokens by implementing 80% lifecycle offset polling and 60-second offline retention buffers during transient failures.
 - Switched frontend telemetry to an isolated batched \`POST /api/telemetry/events\` endpoint with \`navigator.sendBeacon\` handling payload delivery.
 - Redesigned Developer Dashboard to visually support "Active Agents & Automation" keys securely, masking secrets and offering 1-click clipboard integration.
+
+## Telemetry, Reliability & UI Polish
+* Hardened Cloudflare Edge Worker caching for JWKS/OpenID configurations using \`caches.default\` with \`stale-while-revalidate\`.
+* Connected frontend telemetry dispatchers to \`/api/telemetry/beacon\` utilizing non-blocking \`navigator.sendBeacon\` and \`fetch\` keepalive fallbacks.
+* Deployed zero-downtime automated token renewals triggered 120s prior to expiry, backed by exponential backoff failure handling and graceful degradation flags in frontend heartbeat cycle.
+* Implemented live Cloudflare PoP exposure tracking and round-trip execution latency tracking directly in application state.
+* Enhanced UI elements including granular scopes for Agent Keys, one-click API key telemetry testing, and real-time TTL metrics on active SSO sessions.

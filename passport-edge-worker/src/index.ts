@@ -1609,6 +1609,15 @@ export default {
     newHeaders.set('x-axim-trace-id', traceId);
     newHeaders.set('x-correlation-id', correlationId);
     newHeaders.set('Server-Timing', `edge;dur=${duration}`);
+    newHeaders.set('x-execution-time', duration.toString());
+
+    const rayId = request.headers.get('cf-ray');
+    if (rayId) newHeaders.set('cf-ray', rayId);
+
+    const colo = (request as any).cf?.colo;
+    if (colo) newHeaders.set('cf-colo', colo as string);
+
+    newHeaders.set('access-control-expose-headers', 'cf-ray, cf-colo, x-execution-time');
 
     return new Response(response.body, {
       status: response.status,
@@ -1757,10 +1766,26 @@ export default {
 
 
     if (request.method === 'GET' && url.pathname === '/.well-known/openid-configuration') {
-      return await oidc.handleWellKnownOpenidConfiguration(request, env);
+      const cache = (caches as any).default;
+      let response = await cache.match(request);
+      if (!response) {
+        response = await oidc.handleWellKnownOpenidConfiguration(request, env);
+        response = new Response(response.body, response);
+        response.headers.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+        ctx.waitUntil(cache.put(request, response.clone()));
+      }
+      return response;
     }
     if (request.method === 'GET' && url.pathname === '/.well-known/jwks.json') {
-      return await oidc.handleWellKnownJwks(request, env);
+      const cache = (caches as any).default;
+      let response = await cache.match(request);
+      if (!response) {
+        response = await oidc.handleWellKnownJwks(request, env);
+        response = new Response(response.body, response);
+        response.headers.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+        ctx.waitUntil(cache.put(request, response.clone()));
+      }
+      return response;
     }
     if (request.method === 'GET' && url.pathname === '/oauth/authorize') {
       return await oidc.handleOauthAuthorize(request, env);
@@ -1926,6 +1951,21 @@ export default {
         if (url.pathname === '/api/v1/auth/link-wallet') return await linkWalletEndpoint(request, env, ctx, body);
         if (url.pathname === '/api/v1/auth/logout') return await logoutEndpoint(request, env, body, ctx);
         if (url.pathname === '/api/v1/telemetry') return await handleTelemetry(request, env, ctx, body);
+
+        if (url.pathname === '/api/telemetry/beacon' && request.method === 'POST') {
+          ctx.waitUntil((async () => {
+             const body = await request.text();
+             let events = [];
+             try {
+               events = JSON.parse(body);
+               if (!Array.isArray(events)) events = [events];
+             } catch(e) { /* ignore */ }
+             for (const event of events) {
+                 await dispatchCoreTelemetry(env, event.event || 'frontend_beacon', event, event.traceId);
+             }
+          })());
+          return new Response(null, { status: 202, headers: { 'Access-Control-Allow-Origin': request.headers.get('Origin') || '*' } });
+        }
 
         if (url.pathname === '/api/telemetry/events') {
           // Rate limit check

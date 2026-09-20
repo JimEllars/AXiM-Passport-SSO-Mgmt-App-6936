@@ -29,6 +29,7 @@ function Dashboard() {
   const [newAgentKey, setNewAgentKey] = useState(null);
   const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [agentKeyName, setAgentKeyName] = useState('');
+  const [agentKeyScopes, setAgentKeyScopes] = useState(['read:identity']);
 
   const workerUrl = import.meta.env.VITE_PASSPORT_EDGE_URL || 'https://passport.axim.us.com';
 
@@ -39,18 +40,36 @@ function Dashboard() {
       toast.error('Name is required');
       return;
     }
+    if (agentKeyScopes.length === 0) {
+      toast.error('At least one scope is required');
+      return;
+    }
     try {
       setIsGeneratingKey(true);
-      const res = await generateAgentKey({ name: agentKeyName, scopes: 'all', expiresAt: null });
+      const res = await generateAgentKey({ name: agentKeyName, scopes: agentKeyScopes.join(','), expiresAt: null });
       setNewAgentKey(res.secret);
       setAgentKeys([...agentKeys, { id: res.id, name: res.name, scopes: res.scopes, created_at: res.created_at }]);
       setAgentKeyName('');
-      toast.success('Agent key created successfully');
+      setAgentKeyScopes(['read:identity']);
+      toast.success('Agent key created successfully', { duration: 4000, style: { background: '#10B981', color: '#fff' } });
     } catch (e) {
       toast.error(e.message || 'Failed to create agent key');
     } finally {
       setIsGeneratingKey(false);
     }
+  };
+
+  const handleTestKey = async (secret) => {
+      try {
+          const res = await fetch(`${workerUrl}/api/v1/auth/session`, { headers: { 'x-agent-key': secret }});
+          if (res.ok) {
+              toast.success('Agent key verified via Edge successfully!', { duration: 4000, style: { background: '#10B981', color: '#fff' } });
+          } else {
+              throw new Error('Key failed verification');
+          }
+      } catch (e) {
+          toast.error('Failed to verify agent key against Edge', { duration: 4000, style: { background: '#EF4444', color: '#fff' } });
+      }
   };
 
   const handleRevokeKey = async (id) => {
@@ -441,6 +460,12 @@ Save this now!`, { duration: 10000 });
               <div className="flex items-center gap-2">
                 <code className="flex-1 bg-[#0A0D14] p-3 rounded text-sm text-emerald-300 font-mono border border-emerald-500/20">{newAgentKey}</code>
                 <button
+                  onClick={() => handleTestKey(newAgentKey)}
+                  className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-3 rounded transition-colors flex items-center gap-2 font-medium"
+                >
+                  <SafeIcon icon={FiActivity} /> Test
+                </button>
+                <button
                   onClick={() => copyToClipboard(newAgentKey, 'new-key')}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-3 rounded transition-colors flex items-center gap-2 font-medium"
                 >
@@ -453,21 +478,39 @@ Save this now!`, { duration: 10000 });
             </div>
           )}
 
-          <div className="flex gap-4 mb-8">
-            <input
-              type="text"
-              placeholder="e.g. CI/CD Pipeline or Deployment Agent"
-              className="flex-1 bg-[#0A0D14] border border-slate-700 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500 transition-colors"
-              value={agentKeyName}
-              onChange={(e) => setAgentKeyName(e.target.value)}
-            />
-            <button
-              onClick={handleGenerateKey}
-              disabled={isGeneratingKey || !agentKeyName}
-              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition-colors flex items-center gap-2 font-medium"
-            >
-              <SafeIcon icon={FiPlus} /> Generate Key
-            </button>
+          <div className="flex flex-col gap-4 mb-8">
+            <div className="flex gap-4">
+                <input
+                type="text"
+                placeholder="e.g. CI/CD Pipeline or Deployment Agent"
+                className="flex-1 bg-[#0A0D14] border border-slate-700 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500 transition-colors"
+                value={agentKeyName}
+                onChange={(e) => setAgentKeyName(e.target.value)}
+                />
+                <button
+                onClick={handleGenerateKey}
+                disabled={isGeneratingKey || !agentKeyName || agentKeyScopes.length === 0}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition-colors flex items-center gap-2 font-medium"
+                >
+                <SafeIcon icon={FiPlus} /> Generate Key
+                </button>
+            </div>
+
+            <div className="flex flex-wrap gap-4 px-2">
+                <span className="text-sm text-slate-400 font-medium">Key Scopes:</span>
+                {['read:identity', 'write:profile', 'manage:sessions', 'audit:telemetry'].map(scope => (
+                    <label key={scope} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                        <input type="checkbox" className="rounded bg-[#0A0D14] border-slate-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-[#0A0D14]"
+                          checked={agentKeyScopes.includes(scope)}
+                          onChange={(e) => {
+                             if (e.target.checked) setAgentKeyScopes([...agentKeyScopes, scope]);
+                             else setAgentKeyScopes(agentKeyScopes.filter(s => s !== scope));
+                          }}
+                        />
+                        {scope}
+                    </label>
+                ))}
+            </div>
           </div>
 
           <div className="overflow-x-auto">
