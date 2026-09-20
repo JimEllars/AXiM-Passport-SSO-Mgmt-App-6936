@@ -165,7 +165,7 @@ function usePassportAuth(redirectUrl) {
 
       window.aximRefreshPromise = (async () => {
          let attempt = 0;
-         const maxRetries = 3;
+         const maxRetries = 2;
          while (attempt <= maxRetries) {
             try {
                const traceId = crypto.randomUUID();

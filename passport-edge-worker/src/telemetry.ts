@@ -22,6 +22,55 @@ interface TelemetryPayload {
   [key: string]: any;
 }
 
+export interface AuditEventPayload {
+  traceId?: string;
+  eventType: string;
+  userId?: string;
+  appId?: string;
+  ipCountry?: string;
+  status: string | number;
+  [key: string]: any;
+}
+
+export function recordAuditEvent(c: { env: Env, executionCtx: ExecutionContext }, event: AuditEventPayload) {
+  c.executionCtx.waitUntil((async () => {
+    try {
+      const timestamp = new Date().toISOString();
+      const traceId = event.traceId || crypto.randomUUID();
+
+      const payload = {
+        timestamp,
+        traceId,
+        userId: event.userId || 'anonymous',
+        appId: event.appId || 'axim-passport-sso',
+        ipCountry: event.ipCountry || 'unknown',
+        ...event
+      };
+
+      if (c.env.ANALYTICS && typeof c.env.ANALYTICS.writeDataPoint === 'function') {
+        c.env.ANALYTICS.writeDataPoint({
+          blobs: [
+            payload.eventType,
+            payload.userId,
+            payload.appId,
+            payload.ipCountry,
+            payload.status.toString(),
+            traceId
+          ],
+          doubles: [
+            typeof payload.status === 'number' ? payload.status : (payload.status === 'success' ? 200 : 400)
+          ],
+          indexes: [traceId]
+        });
+      } else {
+        console.info(JSON.stringify(payload));
+      }
+    } catch (e) {
+      console.error(JSON.stringify({ type: 'audit_telemetry_error', error: (e as Error).message }));
+    }
+  })());
+}
+
 export async function dispatchCoreTelemetry(env: Env, eventType: string, payload: TelemetryPayload, traceId?: string) {
   const structuredPayload = {
     timestamp: payload.timestamp || new Date().toISOString(),
