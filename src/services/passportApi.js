@@ -153,7 +153,11 @@ function createHandoffUrl(redirectUrl, token) {
 }
 
 
-export function publishTelemetry(event, payload = {}) {
+
+let telemetryBatch = [];
+let telemetryTimeout = null;
+
+export function emitTelemetryEvent(event, payload = {}) {
   try {
     if (!workerUrl) return;
 
@@ -167,22 +171,38 @@ export function publishTelemetry(event, payload = {}) {
 
     window.sessionStorage.setItem('axim_trace_id', traceId);
 
-    const bodyStr = JSON.stringify({
+    telemetryBatch.push({
       event,
       timestamp: new Date().toISOString(),
+      traceId,
       ...safePayload
     });
 
-    const targetUrl = `${workerUrl}/api/v1/telemetry`;
+    if (telemetryTimeout === null) {
+      telemetryTimeout = setTimeout(() => {
+        flushTelemetry();
+      }, 500); // Batch for 500ms
+    }
+  } catch (error) {
+    // Failsafe
+  }
+}
+
+function flushTelemetry() {
+  if (telemetryBatch.length === 0) return;
+  const batch = [...telemetryBatch];
+  telemetryBatch = [];
+  telemetryTimeout = null;
+
+  try {
+    const targetUrl = `${workerUrl}/api/telemetry/events`;
+    const bodyStr = JSON.stringify(batch);
 
     // Attempt to use navigator.sendBeacon
     if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      // sendBeacon requires a Blob with type application/json to pass content-type correctly
-      // but standard sendBeacon to this endpoint might just need plain text or Blob
-      // For compatibility, we'll try sendBeacon and fallback if it fails or if we strictly need headers
       const blob = new Blob([bodyStr], { type: 'application/json' });
       const success = navigator.sendBeacon(targetUrl, blob);
-      if (success) return; // If true, beacon was queued successfully
+      if (success) return;
     }
 
     // Fallback to fetch with keepalive
@@ -190,18 +210,18 @@ export function publishTelemetry(event, payload = {}) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-axim-trace-id': traceId,
       },
       body: bodyStr,
       keepalive: true,
     }).catch(() => {
       // Ignore telemetry errors silently so as not to disrupt user flow
     });
-  } catch (error) {
-    // Failsafe
-  }
+  } catch (e) { /* ignore */ }
 }
 
+export function publishTelemetry(event, payload = {}) {
+  emitTelemetryEvent(event, payload);
+}
 export function getPassportReadiness(redirectUrl) {
   return {
     redirect: Boolean(redirectUrl),

@@ -144,14 +144,16 @@ function usePassportAuth(redirectUrl) {
   useEffect(() => {
     if (!session || !session.exp) return;
     const expMs = session.exp * 1000;
+    const iatMs = (session.iat || (session.exp - 3600)) * 1000;
+    const lifetime = expMs - iatMs;
 
-    // Trigger 60s before expiry
-    const timeUntilRefresh = expMs - Date.now() - 60000;
+    // Trigger at 80% of token lifetime
+    const refreshTime = iatMs + (lifetime * 0.8);
+    const timeUntilRefresh = refreshTime - Date.now();
 
     let timeoutId;
 
     const attemptRefresh = async () => {
-      // Single-flight lock handled at module level below or we can use window.aximRefreshPromise
       if (window.aximRefreshPromise) {
           try {
              const data = await window.aximRefreshPromise;
@@ -159,7 +161,7 @@ function usePassportAuth(redirectUrl) {
                  localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
                  setSession(data.user);
              }
-          } catch(e) { /* ignore */  /* ignore */ }
+          } catch(e) { /* ignore */ }
           return;
       }
 
@@ -195,50 +197,54 @@ function usePassportAuth(redirectUrl) {
                if (res.status >= 500) {
                   throw new Error('Server Error');
                }
-
-               throw new Error('Unknown Error');
-            } catch (e) {
-               if (attempt === maxRetries) {
-                  const onOnline = async () => {
-                     window.removeEventListener('online', onOnline);
-                     attemptRefresh();
-                  };
-                  window.addEventListener('online', onOnline);
-                  return null;
+            } catch (err) {
+               attempt++;
+               if (attempt > maxRetries) {
+                   // Implement graceful offline/error fallback
+                   // Instead of immediately clearing, wait 60 seconds buffer before terminating session
+                   const timeRemaining = expMs - Date.now();
+                   if (timeRemaining < -60000) { // Keep alive 60 seconds after expiry
+                       localStorage.removeItem('optimistic_session');
+                       setSession(null);
+                       setIdentities([]);
+                   } else if (timeRemaining > 0) {
+                       // Retry later if we still have time
+                       setTimeout(attemptRefresh, 5000);
+                   }
+                   break;
                }
+               // Wait before retry
+               await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
             }
-
-            attempt++;
-            const backoff = Math.pow(2, attempt - 1) * 1000;
-            const jitter = Math.floor(Math.random() * 500) - 250;
-            await new Promise(r => setTimeout(r, backoff + jitter));
          }
-         return null;
       })();
 
       try {
          const data = await window.aximRefreshPromise;
-         if (data && data.user) {
+         if (data && data.success && data.user) {
             localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
             setSession(data.user);
-            try {
-               if (window.BroadcastChannel) {
-                   const bc = new BroadcastChannel('axim_passport_auth');
-                   bc.postMessage({ type: 'session_refreshed', user: data.user });
-                   bc.close();
-               }
-            } catch(e) { /* ignore */  /* ignore */ }
+            const bc = new BroadcastChannel('axim_passport_channel');
+            bc.postMessage({ type: 'session_refreshed', user: data.user });
+            bc.close();
          }
-      } catch(e) { /* ignore */
-      } finally {
+      } catch(e) { /* ignore */ } finally {
          window.aximRefreshPromise = null;
       }
     };
 
     if (timeUntilRefresh <= 0) {
-       attemptRefresh();
+      const timeRemaining = expMs - Date.now();
+      if (timeRemaining >= -60000) { // Allow up to 60s grace period after expiry
+        attemptRefresh();
+      } else {
+        // completely expired with no grace left
+        localStorage.removeItem('optimistic_session');
+        setSession(null);
+        setIdentities([]);
+      }
     } else {
-       timeoutId = setTimeout(attemptRefresh, timeUntilRefresh);
+      timeoutId = setTimeout(attemptRefresh, timeUntilRefresh);
     }
 
     return () => clearTimeout(timeoutId);

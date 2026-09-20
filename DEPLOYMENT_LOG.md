@@ -147,3 +147,9 @@ DNS propagation and worker routing were verified to the custom domain `https://p
 - Playwright E2E suites passing (`npm run test:e2e`).
 - Static type checking and `npm run lint` successful with zero errors.
 Deployment Log Updated - Production Telemetry Activation, Client Resilience & UI Enterprise Hardening
+## [2026-10-XX] Agent Auth Hardening, Refresh Resiliency & Telemetry
+- Hardened Machine-to-Machine API interactions via \`X-Agent-Key\` in Cloudflare Edge Worker (\`passport-edge-worker\`).
+- Integrated dynamic Turnstile bypasses for authenticated active agents with strict rate-limiting.
+- Stabilized session refresh tokens by implementing 80% lifecycle offset polling and 60-second offline retention buffers during transient failures.
+- Switched frontend telemetry to an isolated batched \`POST /api/telemetry/events\` endpoint with \`navigator.sendBeacon\` handling payload delivery.
+- Redesigned Developer Dashboard to visually support "Active Agents & Automation" keys securely, masking secrets and offering 1-click clipboard integration.
