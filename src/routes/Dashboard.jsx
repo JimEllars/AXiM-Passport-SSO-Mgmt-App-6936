@@ -19,6 +19,13 @@ function Dashboard() {
   const [copied, setCopied] = useState(null);
   const [telemetryHealth, setTelemetryHealth] = useState(null);
   const [agentKeys, setAgentKeys] = useState([]);
+
+  const isSuperUser = Boolean(
+    auth?.session?.user?.super_user === true ||
+    auth?.session?.user?.role === 'super_user' ||
+    (auth?.session?.user?.email && ['james.ellars@axim.us.com', 'jrellars@gmail.com'].includes(auth.session.user.email.toLowerCase()))
+  );
+
   const [newAgentKey, setNewAgentKey] = useState(null);
   const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [agentKeyName, setAgentKeyName] = useState('');
