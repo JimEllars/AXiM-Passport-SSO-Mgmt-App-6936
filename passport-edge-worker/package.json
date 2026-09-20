@@ -10,7 +10,7 @@
     "@cloudflare/workers-types": "^5.20260920.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.68.0",
-    "wrangler": "4.129.1"
+    "wrangler": "4.135.0"
   },
   "dependencies": {
     "jose": "^6.2.12",
