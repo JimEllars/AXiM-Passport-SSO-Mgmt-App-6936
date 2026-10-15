@@ -64,6 +64,26 @@ function Dashboard() {
     }
   };
 
+  const handleTestKey = async () => {
+    if (!newAgentKey) {
+      toast.error('No active key available to test');
+      return;
+    }
+    try {
+      const res = await fetch(`${workerUrl}/api/health/ecosystem`, {
+        headers: { 'X-Agent-Key': newAgentKey }
+      });
+      if (res.ok) {
+        toast.success('Agent verified against edge (HTTP 200)');
+      } else {
+        toast.error(`Agent verification failed (HTTP ${res.status})`);
+      }
+    } catch (e) {
+      toast.error('Failed to contact edge worker');
+    }
+  };
+
+
   const fetchHealth = async () => {
     try {
       const res = await fetch(`${workerUrl}/api/telemetry/health`, {
@@ -445,6 +465,12 @@ Save this now!`, { duration: 10000 });
                   className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-3 rounded transition-colors flex items-center gap-2 font-medium"
                 >
                   {copied === 'new-key' ? <SafeIcon icon={FiCheck} /> : <SafeIcon icon={FiCopy} />} Copy
+                </button>
+                <button
+                  onClick={handleTestKey}
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded transition-colors flex items-center gap-2 font-medium"
+                >
+                  <SafeIcon icon={FiActivity} /> Test Key against Edge
                 </button>
               </div>
               <button onClick={() => setNewAgentKey(null)} className="mt-4 text-sm text-emerald-400 hover:text-emerald-300">

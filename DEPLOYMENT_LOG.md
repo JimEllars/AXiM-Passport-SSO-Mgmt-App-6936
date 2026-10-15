@@ -153,3 +153,26 @@ Deployment Log Updated - Production Telemetry Activation, Client Resilience & UI
 - Stabilized session refresh tokens by implementing 80% lifecycle offset polling and 60-second offline retention buffers during transient failures.
 - Switched frontend telemetry to an isolated batched \`POST /api/telemetry/events\` endpoint with \`navigator.sendBeacon\` handling payload delivery.
 - Redesigned Developer Dashboard to visually support "Active Agents & Automation" keys securely, masking secrets and offering 1-click clipboard integration.
+
+## Sprint 4.2 Re-Execution Updates
+
+### Task 1: Cloudflare Edge Cache for OIDC Discovery
+- Implemented `caches.default` matching logic in `passport-edge-worker/src/index.ts`.
+- Endpoints `/.well-known/openid-configuration` and `/.well-known/jwks.json` now securely cache their responses.
+- `Cache-Control: public, max-age=3600, stale-while-revalidate=86400` appended to cached and newly generated responses.
+- Handled via `ctx.waitUntil(cache.put(request, response.clone()))`.
+
+### Task 2: Expose Edge Node Routing Headers
+- Modified the custom `json()` wrapper in `passport-edge-worker/src/index.ts` to append diagnostic headers.
+- `cf-ray` and `cf-colo` headers injected into all JSON responses.
+- explicitly exposed via `Access-Control-Expose-Headers: cf-ray, cf-colo` inside CORS handlers.
+
+### Task 3: Dashboard M2M "Test Key" Verification
+- Updated `src/routes/Dashboard.jsx` to feature an inline **"Test Key against Edge"** button for newly generated autonomous agent keys.
+- Triggers fetch to `/api/health/ecosystem` and displays immediate 200/401/403 status toasts via `react-hot-toast`.
+
+### Task 4: Developer Sandbox JWT Inspector & Code Snippets
+- Completely revamped the JWT claims inspector in `src/routes/Sandbox.jsx`.
+- Real-time `atob()` base64url decoding applied to beautifully map token Header and Payload.
+- Integrated a live TTL countdown clock using the token's `exp` claim.
+- Generated copy-to-clipboard friendly cURL scripts using the active session token to verify endpoint permissions on `/api/health/ecosystem`.
