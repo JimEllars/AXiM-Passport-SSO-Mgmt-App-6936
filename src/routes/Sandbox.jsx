@@ -281,7 +281,42 @@ function Sandbox() {
           <details style={{ marginTop: '1rem', border: '1px solid #334155', borderRadius: '4px', padding: '0.5rem', backgroundColor: '#0f172a' }}>
             <summary style={{ cursor: 'pointer', color: '#94a3b8', userSelect: 'none', fontWeight: 'bold' }}>JWT / Claims Inspector</summary>
             <div style={{ marginTop: '10px', fontSize: '12px', color: '#cbd5e1' }}>
-              <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto' }}>{JSON.stringify(result, null, 2)}</pre>
+              {(() => {
+                 try {
+                   if (!result.supabase_access_token) throw new Error();
+                   const parts = result.supabase_access_token.split('.');
+                   if (parts.length !== 3) throw new Error();
+                   const header = JSON.parse(atob(parts[0]));
+                   const payload = JSON.parse(atob(parts[1]));
+                   const timeRemaining = payload.exp ? Math.max(0, payload.exp - Math.floor(Date.now() / 1000)) : null;
+                   return (
+                     <>
+                        <div style={{ marginBottom: '10px' }}>
+                          <strong style={{ color: '#38bdf8' }}>Header:</strong>
+                          <pre style={{ margin: '5px 0', padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto' }}>{JSON.stringify(header, null, 2)}</pre>
+                        </div>
+                        <div style={{ marginBottom: '10px' }}>
+                          <strong style={{ color: '#38bdf8' }}>Payload:</strong>
+                          <pre style={{ margin: '5px 0', padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto' }}>{JSON.stringify(payload, null, 2)}</pre>
+                        </div>
+                        {timeRemaining !== null && (
+                          <div style={{ padding: '10px', borderRadius: '4px', backgroundColor: timeRemaining < 300 ? '#7f1d1d' : '#064e3b', color: '#fff' }}>
+                            <strong>Token TTL:</strong> {Math.floor(timeRemaining / 60)}m {timeRemaining % 60}s remaining {timeRemaining < 300 ? '(Expiring Soon)' : ''}
+                          </div>
+                        )}
+                        <div style={{ marginTop: '15px' }}>
+                          <strong style={{ color: '#38bdf8' }}>cURL Snippet for API Testing:</strong>
+                          <pre style={{ margin: '5px 0', padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+{`curl -X GET ${workerUrl}/api/health/ecosystem \
+  -H "Authorization: Bearer ${result.supabase_access_token}"`}
+                          </pre>
+                        </div>
+                     </>
+                   )
+                 } catch (e) {
+                   return <pre style={{ margin: 0, padding: '10px', backgroundColor: '#000', borderRadius: '4px', overflowX: 'auto' }}>{JSON.stringify(result, null, 2)}</pre>;
+                 }
+              })()}
             </div>
           </details>
         </div>

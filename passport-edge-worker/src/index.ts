@@ -301,11 +301,20 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
     headers.set('Access-Control-Allow-Origin', env.PASSPORT_ORIGIN || '*');
   }
 
+  headers.set('Access-Control-Expose-Headers', 'cf-ray, cf-colo');
   return headers;
 }
 
 function json(request: Request, env: Env, body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: { ...corsHeaders(request, env), ...JSON_HEADERS } });
+  const headers = new Headers({ ...corsHeaders(request, env), ...JSON_HEADERS });
+
+  const cfRay = request.headers.get('cf-ray');
+  if (cfRay) headers.set('cf-ray', cfRay);
+
+  const cfColo = request.cf?.colo as string || 'unknown';
+  headers.set('cf-colo', cfColo);
+
+  return Response.json(body, { status, headers });
 }
 
 async function parseJson(request: Request): Promise<Record<string, unknown> | null> {
@@ -1756,11 +1765,28 @@ export default {
 
 
 
-    if (request.method === 'GET' && url.pathname === '/.well-known/openid-configuration') {
-      return await oidc.handleWellKnownOpenidConfiguration(request, env);
+if (request.method === 'GET' && url.pathname === '/.well-known/openid-configuration') {
+      const cache = (caches as any).default;
+      let response = await cache.match(request);
+      if (!response) {
+        response = await oidc.handleWellKnownOpenidConfiguration(request, env);
+        response = new Response(response.body, response);
+        response.headers.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+        ctx.waitUntil(cache.put(request, response.clone()));
+      }
+      return response;
     }
+
     if (request.method === 'GET' && url.pathname === '/.well-known/jwks.json') {
-      return await oidc.handleWellKnownJwks(request, env);
+      const cache = (caches as any).default;
+      let response = await cache.match(request);
+      if (!response) {
+        response = await oidc.handleWellKnownJwks(request, env);
+        response = new Response(response.body, response);
+        response.headers.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+        ctx.waitUntil(cache.put(request, response.clone()));
+      }
+      return response;
     }
     if (request.method === 'GET' && url.pathname === '/oauth/authorize') {
       return await oidc.handleOauthAuthorize(request, env);
