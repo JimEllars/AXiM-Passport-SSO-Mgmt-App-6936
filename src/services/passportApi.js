@@ -315,6 +315,12 @@ export async function checkWorkerHealth() {
         const rayId = res.headers.get("cf-ray");
         if (rayId) console.debug(`[AXiM Passport] API Response /api/health - Ray ID: ${rayId} - Trace: ${correlationId}`);
       }
+      if (res.status === 429) {
+          const retryAfter = res.headers.get('Retry-After');
+          const delaySec = retryAfter ? parseInt(retryAfter, 10) : 10;
+          await new Promise(r => setTimeout(r, delaySec * 1000));
+          continue;
+      }
       return res.ok;
     } catch {
       attempt++;
@@ -409,5 +415,32 @@ export async function revokeAgentKey(keyId) {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   if (!res.ok) throw new Error('Failed to revoke agent key');
+  return await res.json();
+}
+
+export async function registerApp({ name, redirectUris, allowedOrigins }) {
+  requireWorker();
+  const token = window.localStorage.getItem('passport_token');
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${workerUrl}/api/v1/apps`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, redirect_uris: redirectUris, allowed_origins: allowedOrigins })
+  });
+  if (!res.ok) throw new Error('Failed to register app');
+  return await res.json();
+}
+
+export async function deleteApp(appId) {
+  requireWorker();
+  const token = window.localStorage.getItem('passport_token');
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${workerUrl}/api/v1/apps/${appId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error('Failed to delete app');
   return await res.json();
 }

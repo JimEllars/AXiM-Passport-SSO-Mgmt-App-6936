@@ -176,3 +176,19 @@ Deployment Log Updated - Production Telemetry Activation, Client Resilience & UI
 - Real-time `atob()` base64url decoding applied to beautifully map token Header and Payload.
 - Integrated a live TTL countdown clock using the token's `exp` claim.
 - Generated copy-to-clipboard friendly cURL scripts using the active session token to verify endpoint permissions on `/api/health/ecosystem`.
+
+## 2025-05-18 Ecosystem Administration & Audit Visualization
+
+### Task 1: D1 App Registry Management
+- Exported \`registerApp({ name, redirectUris, allowedOrigins })\` and \`deleteApp(appId)\` properly in \`src/services/passportApi.js\`.
+- Exposed these properly in the Dashboard UI.
+- Validated wildcards inside URLs to be forbidden.
+- Extended the edge worker to return all ecosystem apps when the \`super_user\` fetches the \`/api/v1/apps\` endpoint.
+
+### Task 2: Live Telemetry & Security Audit Stream
+- Integrated \`GET /api/v1/audit/logs\` in \`passport-edge-worker/src/index.ts\` (only accessible for Super Users).
+- Rendered \`Authentication Audit Log\` properly within \`src/routes/Dashboard.jsx\`.
+
+### Task 3: Global Rate Limit Headers & Client Intercepts
+- Verified \`429 Too Many Requests\` explicitly include \`Retry-After: 10\` within the edge worker.
+- Monitored and successfully throttled requests intercepting 429 within \`src/services/passportClient.js\` and \`src/services/passportApi.js\` respectively utilizing the \`Retry-After\` header value.

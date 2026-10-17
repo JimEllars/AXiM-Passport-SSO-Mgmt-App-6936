@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
 import usePassportAuth from '../hooks/usePassportAuth';
-import { listAgentKeys, generateAgentKey, revokeAgentKey } from '../services/passportApi';
+import { listAgentKeys, generateAgentKey, revokeAgentKey, registerApp, deleteApp as deleteAppApi } from '../services/passportApi';
 
 const { FiPlus, FiTrash2, FiRefreshCw, FiCopy, FiCheck, FiActivity } = FiIcons;
 
@@ -145,24 +145,41 @@ function Dashboard() {
     }
   };
 
-  const createApp = async () => {
+  const [showRegisterAppModal, setShowRegisterAppModal] = useState(false);
+  const [newAppName, setNewAppName] = useState('');
+  const [newAppRedirectUris, setNewAppRedirectUris] = useState('');
+  const [newAppAllowedOrigins, setNewAppAllowedOrigins] = useState('');
+
+  const handleRegisterApp = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${workerUrl}/api/v1/apps`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.session.access_token}`
-        },
-        body: JSON.stringify({ name: 'New Application' })
-      });
-      if (!res.ok) throw new Error('Failed to create app');
+      const redirectUris = newAppRedirectUris.split('\n').map(u => u.trim()).filter(Boolean);
+      const allowedOrigins = newAppAllowedOrigins.split('\n').map(u => u.trim()).filter(Boolean);
+
+      // Validation: no wildcards
+      if (redirectUris.some(u => u.includes('*'))) {
+        toast.error('Wildcards are not allowed in Redirect URIs');
+        setLoading(false);
+        return;
+      }
+
+      await registerApp({ name: newAppName || 'New Application', redirectUris, allowedOrigins });
+      toast.success('App registered successfully');
+      setShowRegisterAppModal(false);
+      setNewAppName('');
+      setNewAppRedirectUris('');
+      setNewAppAllowedOrigins('');
       await fetchApps();
     } catch (err) {
       setError(err.message);
+      toast.error('Failed to register app');
     } finally {
       setLoading(false);
     }
+  };
+
+  const createApp = async () => {
+    setShowRegisterAppModal(true);
   };
 
   const deleteApp = async (id) => {
@@ -333,7 +350,7 @@ Save this now!`, { duration: 10000 });
 
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h2 className="text-2xl font-bold">App Registry</h2>
+            <h2 className="text-2xl font-bold">{isSuperUser ? "Registered Ecosystem Applications" : "App Registry"}</h2>
             <p className="text-slate-400 mt-1">Manage your OIDC client applications</p>
           </div>
           <button
@@ -453,6 +470,130 @@ Save this now!`, { duration: 10000 });
           </div>
         </div>
 
+        {isSuperUser && (
+          <>
+            <div className="flex justify-between items-center mt-12 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold">Authentication Audit Log</h2>
+                <p className="text-slate-400 mt-1">Live telemetry & security audit stream</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-xl p-6 shadow-sm mb-12">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400">
+                      <th className="pb-3 font-medium">Event</th>
+                      <th className="pb-3 font-medium">User/Identity</th>
+                      <th className="pb-3 font-medium">IP Address</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {auditLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="py-8 text-center text-slate-500 italic">No audit logs available</td>
+                      </tr>
+                    ) : (
+                      auditLogs.map((log, index) => {
+                        const isM2M = log.event === 'M2M_AGENT_ACCESS' || log.event === 'AGENT_KEY_CREATED' || log.event === 'AGENT_KEY_REVOKED';
+                        const isFailure = log.event === 'AUTH_FAILURE' || log.event === 'AUTH_FAILED' || log.status >= 400;
+                        const eventColor = isFailure ? 'text-red-400 bg-red-400/10 border-red-400/20' : isM2M ? 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20' : 'text-slate-300 bg-slate-800/50 border-slate-700/50';
+
+                        let displayIp = log.ip_address || 'unknown';
+                        if (displayIp !== 'unknown' && displayIp.includes('.')) {
+                          const parts = displayIp.split('.');
+                          if (parts.length === 4) {
+                            displayIp = `${parts[0]}.${parts[1]}.x.x`;
+                          }
+                        }
+
+                        return (
+                          <tr key={log.id || index} className="group">
+                            <td className="py-4">
+                              <span className={`px-2 py-1 rounded text-xs border font-medium ${eventColor}`}>
+                                {log.event}
+                              </span>
+                            </td>
+                            <td className="py-4 font-mono text-xs text-slate-300 truncate max-w-[150px]">{log.user_did || 'anonymous'}</td>
+                            <td className="py-4 text-slate-400 font-mono text-xs">{displayIp}</td>
+                            <td className="py-4 text-slate-400">{log.status}</td>
+                            <td className="py-4 text-slate-400 text-xs">{new Date(log.created_at).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {isSuperUser && (
+          <>
+            <div className="flex justify-between items-center mt-12 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold">Authentication Audit Log</h2>
+                <p className="text-slate-400 mt-1">Live telemetry & security audit stream</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-xl p-6 shadow-sm mb-12">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400">
+                      <th className="pb-3 font-medium">Event</th>
+                      <th className="pb-3 font-medium">User/Identity</th>
+                      <th className="pb-3 font-medium">IP Address</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {auditLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="py-8 text-center text-slate-500 italic">No audit logs available</td>
+                      </tr>
+                    ) : (
+                      auditLogs.map((log, index) => {
+                        const isM2M = log.event === 'M2M_AGENT_ACCESS' || log.event === 'AGENT_KEY_CREATED' || log.event === 'AGENT_KEY_REVOKED';
+                        const isFailure = log.event === 'AUTH_FAILURE' || log.event === 'AUTH_FAILED' || log.status >= 400;
+                        const eventColor = isFailure ? 'text-red-400 bg-red-400/10 border-red-400/20' : isM2M ? 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20' : 'text-slate-300 bg-slate-800/50 border-slate-700/50';
+
+                        let displayIp = log.ip_address || 'unknown';
+                        if (displayIp !== 'unknown' && displayIp.includes('.')) {
+                          const parts = displayIp.split('.');
+                          if (parts.length === 4) {
+                            displayIp = `${parts[0]}.${parts[1]}.x.x`;
+                          }
+                        }
+
+                        return (
+                          <tr key={log.id || index} className="group">
+                            <td className="py-4">
+                              <span className={`px-2 py-1 rounded text-xs border font-medium ${eventColor}`}>
+                                {log.event}
+                              </span>
+                            </td>
+                            <td className="py-4 font-mono text-xs text-slate-300 truncate max-w-[150px]">{log.user_did || 'anonymous'}</td>
+                            <td className="py-4 text-slate-400 font-mono text-xs">{displayIp}</td>
+                            <td className="py-4 text-slate-400">{log.status}</td>
+                            <td className="py-4 text-slate-400 text-xs">{new Date(log.created_at).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-xl p-6 shadow-sm mb-12">
           {newAgentKey && (
             <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-4 mb-6">
@@ -539,6 +680,63 @@ Save this now!`, { duration: 10000 });
         </div>
 
       </main>
+
+      {showRegisterAppModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0A0D14] border border-slate-800 rounded-xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-100 mb-4">Register New Application</h3>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Application Name</label>
+                <input
+                  type="text"
+                  value={newAppName}
+                  onChange={(e) => setNewAppName(e.target.value)}
+                  placeholder="e.g. AXiM Analytics"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Redirect URIs (One per line)</label>
+                <textarea
+                  value={newAppRedirectUris}
+                  onChange={(e) => setNewAppRedirectUris(e.target.value)}
+                  placeholder="https://app.example.com/callback"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                  rows={3}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Allowed Origins (One per line, optional)</label>
+                <textarea
+                  value={newAppAllowedOrigins}
+                  onChange={(e) => setNewAppAllowedOrigins(e.target.value)}
+                  placeholder="https://app.example.com"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                  rows={2}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowRegisterAppModal(false)}
+                className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRegisterApp}
+                disabled={loading}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+              >
+                Register
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );
