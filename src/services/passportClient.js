@@ -331,6 +331,13 @@ export async function forceTokenRefresh(onAuthenticated, onUnauthenticated) {
           headers: { ...getTracingHeaders(), 'x-correlation-id': traceId }
         });
 
+        if (res.status === 429) {
+          const retryAfter = res.headers.get('Retry-After');
+          const delaySec = retryAfter ? parseInt(retryAfter, 10) : 10;
+          await new Promise(r => setTimeout(r, delaySec * 1000));
+          continue; // Retry without incrementing attempt immediately or handle it properly.
+        }
+
         if (res.ok) {
           const data = await res.json();
           if (data.success && data.user) {

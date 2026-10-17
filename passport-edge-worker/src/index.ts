@@ -2055,7 +2055,16 @@ if (request.method === 'GET' && url.pathname === '/.well-known/openid-configurat
         const userDid = payload.sub;
 
         if (request.method === 'GET' && url.pathname === '/api/v1/apps') {
-            const result = await env.DB.prepare('SELECT id, client_id, name, redirect_uris, allowed_origins, created_at FROM apps WHERE owner_address = ?').bind(userDid).all();
+            const userEmail = payload.email as string;
+            const isSuperUser = payload.super_user === true || payload.role === 'super_user' || (userEmail && ['james.ellars@axim.us.com', 'jrellars@gmail.com'].includes(userEmail.toLowerCase()));
+
+            let result;
+            if (isSuperUser) {
+                result = await env.DB.prepare('SELECT id, client_id, name, redirect_uris, allowed_origins, created_at FROM apps').all();
+            } else {
+                result = await env.DB.prepare('SELECT id, client_id, name, redirect_uris, allowed_origins, created_at FROM apps WHERE owner_address = ?').bind(userDid).all();
+            }
+
             let auditLogs: any[] = [];
             try {
                 const logs = await env.DB.prepare('SELECT * FROM audit_logs WHERE user_did = ? ORDER BY created_at DESC LIMIT 10').bind(userDid).all();
@@ -2087,25 +2096,48 @@ if (request.method === 'GET' && url.pathname === '/.well-known/openid-configurat
 
         if (request.method === 'DELETE' && url.pathname.match(/^\/api\/v1\/apps\/([a-zA-Z0-9-]+)$/)) {
             const appId = url.pathname.split('/').pop();
-            await env.DB.prepare('DELETE FROM apps WHERE id = ? AND owner_address = ?').bind(appId, userDid).run();
+            const userEmail = payload.email as string;
+            const isSuperUser = payload.super_user === true || payload.role === 'super_user' || (userEmail && ['james.ellars@axim.us.com', 'jrellars@gmail.com'].includes(userEmail.toLowerCase()));
+
+            if (isSuperUser) {
+                await env.DB.prepare('DELETE FROM apps WHERE id = ?').bind(appId).run();
+            } else {
+                await env.DB.prepare('DELETE FROM apps WHERE id = ? AND owner_address = ?').bind(appId, userDid).run();
+            }
             return json(request, env, { success: true });
         }
 
         if (request.method === 'PUT' && url.pathname.match(/^\/api\/v1\/apps\/([a-zA-Z0-9-]+)$/)) {
             const appId = url.pathname.split('/').pop();
             const body = await request.json().catch(() => ({})) as any;
-            await env.DB.prepare('UPDATE apps SET name = ?, redirect_uris = ?, allowed_origins = ? WHERE id = ? AND owner_address = ?')
-                .bind(body.name, JSON.stringify(body.redirect_uris || []), JSON.stringify(body.allowed_origins || []), appId, userDid)
-                .run();
+            const userEmail = payload.email as string;
+            const isSuperUser = payload.super_user === true || payload.role === 'super_user' || (userEmail && ['james.ellars@axim.us.com', 'jrellars@gmail.com'].includes(userEmail.toLowerCase()));
+
+            if (isSuperUser) {
+                await env.DB.prepare('UPDATE apps SET name = ?, redirect_uris = ?, allowed_origins = ? WHERE id = ?')
+                    .bind(body.name, JSON.stringify(body.redirect_uris || []), JSON.stringify(body.allowed_origins || []), appId)
+                    .run();
+            } else {
+                await env.DB.prepare('UPDATE apps SET name = ?, redirect_uris = ?, allowed_origins = ? WHERE id = ? AND owner_address = ?')
+                    .bind(body.name, JSON.stringify(body.redirect_uris || []), JSON.stringify(body.allowed_origins || []), appId, userDid)
+                    .run();
+            }
             return json(request, env, { success: true });
         }
 
         if (request.method === 'POST' && url.pathname.match(/^\/api\/v1\/apps\/([a-zA-Z0-9-]+)\/secret$/)) {
             const appId = url.pathname.split('/')[4];
+            const userEmail = payload.email as string;
+            const isSuperUser = payload.super_user === true || payload.role === 'super_user' || (userEmail && ['james.ellars@axim.us.com', 'jrellars@gmail.com'].includes(userEmail.toLowerCase()));
 
             // Check ownership
-            const check = await env.DB.prepare('SELECT id FROM apps WHERE id = ? AND owner_address = ?').bind(appId, userDid).first();
-            if (!check) return json(request, env, { error: 'Not found or unauthorized' }, 404);
+            if (!isSuperUser) {
+                const check = await env.DB.prepare('SELECT id FROM apps WHERE id = ? AND owner_address = ?').bind(appId, userDid).first();
+                if (!check) return json(request, env, { error: 'Not found or unauthorized' }, 404);
+            } else {
+                const check = await env.DB.prepare('SELECT id FROM apps WHERE id = ?').bind(appId).first();
+                if (!check) return json(request, env, { error: 'Not found' }, 404);
+            }
 
             const clientSecret = 'sec_' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
             const encoder = new TextEncoder();
@@ -2119,6 +2151,54 @@ if (request.method === 'GET' && url.pathname === '/.well-known/openid-configurat
             return json(request, env, { client_secret: clientSecret });
         }
     }
+      if (request.method === 'GET' && url.pathname === '/api/v1/audit/logs') {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return json(request, env, { error: 'Unauthorized' }, 401);
+        }
+        const token = authHeader.substring(7);
+        const payload = await verifyJwt(token, env.JWT_SECRET);
+        if (!payload) return json(request, env, { error: 'Invalid token' }, 401);
+        const userEmail = payload.email as string;
+        const isSuperUser = payload.super_user === true || payload.role === 'super_user' || (userEmail && ['james.ellars@axim.us.com', 'jrellars@gmail.com'].includes(userEmail.toLowerCase()));
+        if (!isSuperUser) {
+            return json(request, env, { error: 'Forbidden' }, 403);
+        }
+
+        let logs: any[] = [];
+        try {
+            const query = await env.DB.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100').all();
+            logs = query.results;
+        } catch (e) {
+            // Ignore if table missing
+        }
+        return json(request, env, { logs });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/v1/audit/logs') {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return json(request, env, { error: 'Unauthorized' }, 401);
+        }
+        const token = authHeader.substring(7);
+        const payload = await verifyJwt(token, env.JWT_SECRET);
+        if (!payload) return json(request, env, { error: 'Invalid token' }, 401);
+        const userEmail = payload.email as string;
+        const isSuperUser = payload.super_user === true || payload.role === 'super_user' || (userEmail && ['james.ellars@axim.us.com', 'jrellars@gmail.com'].includes(userEmail.toLowerCase()));
+        if (!isSuperUser) {
+            return json(request, env, { error: 'Forbidden' }, 403);
+        }
+
+        let logs: any[] = [];
+        try {
+            const query = await env.DB.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100').all();
+            logs = query.results;
+        } catch (e) {
+            // Ignore if table missing
+        }
+        return json(request, env, { logs });
+      }
+
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/session') return await handleSessionEndpoint(request, env);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/identities') return await listIdentitiesEndpoint(request, env);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/google') return await startGoogle(request, env, url);
