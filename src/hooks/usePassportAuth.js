@@ -224,9 +224,6 @@ function usePassportAuth(redirectUrl) {
          if (data && data.success && data.user) {
             localStorage.setItem('optimistic_session', JSON.stringify({ ...data.user, cachedAt: Date.now() }));
             setSession(data.user);
-            const bc = new BroadcastChannel('axim_passport_channel');
-            bc.postMessage({ type: 'session_refreshed', user: data.user });
-            bc.close();
          }
       } catch(e) { /* ignore */ } finally {
          window.aximRefreshPromise = null;
@@ -546,7 +543,30 @@ publishTelemetry('login_failure', { method: 'wallet', reason: 'unauthorized_acce
   }, []);
 
 
-  const startWalletLink = useCallback(async () => {
+
+  const linkIdentity = useCallback(async (provider, credential) => {
+    try {
+      setError(null);
+      setBusy(true);
+      setSelectedMethod('link-' + provider);
+      const linkReq = await fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/link-provider`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, payload: credential }),
+        credentials: 'include'
+      });
+      if (!linkReq.ok) throw new Error('Could not link ' + provider + '.');
+      setBusy(false);
+      setSelectedMethod(null);
+      window.location.reload();
+    } catch (e) {
+      setBusy(false);
+      setSelectedMethod(null);
+      setError(e.message || 'An error occurred while linking ' + provider + '.');
+    }
+  }, []);
+
+const startWalletLink = useCallback(async () => {
     try {
       setError(null);
       setBusy(true);
@@ -560,10 +580,13 @@ publishTelemetry('login_failure', { method: 'wallet', reason: 'unauthorized_acce
       if (!challengeReq.ok) throw new Error('Could not request linking challenge. Ensure you have an active session.');
       const challengeData = await challengeReq.json();
       const signed = await signWalletChallenge({ provider: account.provider, address: account.address, message: challengeData.message });
-      const linkReq = await fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/link-wallet`, {
+      const linkReq = await fetch(`${import.meta.env.VITE_PASSPORT_EDGE_URL}/api/v1/auth/link-provider`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: { ...signed, chainId: account.chainId, nonce: challengeData.nonce } }),
+        body: JSON.stringify({
+            provider: 'wallet',
+            payload: { ...signed, chainId: account.chainId, nonce: challengeData.nonce }
+        }),
         credentials: 'include'
       });
       if (!linkReq.ok) throw new Error('Could not link wallet.');
@@ -619,6 +642,8 @@ publishTelemetry('turnstile_challenge_failed', { error: message, isTransient });
     startWallet,
     cancel,
     logout: performLogout,
+    linkIdentity,
+    startWalletLink,
     connectionStatus,
   };
 }
