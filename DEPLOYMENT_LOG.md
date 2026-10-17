@@ -192,3 +192,4 @@ Deployment Log Updated - Production Telemetry Activation, Client Resilience & UI
 ### Task 3: Global Rate Limit Headers & Client Intercepts
 - Verified \`429 Too Many Requests\` explicitly include \`Retry-After: 10\` within the edge worker.
 - Monitored and successfully throttled requests intercepting 429 within \`src/services/passportClient.js\` and \`src/services/passportApi.js\` respectively utilizing the \`Retry-After\` header value.
+## Sprint 5.2 - OTP Rate Limiting and IdP Linking\n\nTask 1: Rate limiting and flood protection\nTask 2: Identity Provider Linking\nTask 3: Cross-Tab State Sync Resilience\n

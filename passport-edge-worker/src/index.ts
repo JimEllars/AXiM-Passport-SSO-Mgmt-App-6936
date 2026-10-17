@@ -2,6 +2,7 @@ import { createErrorResponse } from "./error";
 import * as oidc from "./oidc";
 import { dispatchCoreTelemetry, recordAuditEvent } from './telemetry';
 import { EmailDispatchManager } from './emailService';
+import { checkEmailRateLimit } from './rateLimiter';
 
 import { verifyMessage } from 'viem';
 
@@ -1092,6 +1093,10 @@ async function finishApple(request: Request, env: Env, ctx: ExecutionContext, ur
 }
 
 async function startEmailOtp(request: Request, env: Env, body: Record<string, unknown>): Promise<Response> {
+
+  if (typeof body.email === "string" && !checkEmailRateLimit(body.email)) {
+    return json(request, env, { error: "Too many OTP requests. Please wait 5 minutes." }, 429);
+  }
   const { email, redirect, turnstileToken } = body;
   const redirectUrl = approvedRedirect(env, redirect);
 
@@ -1263,6 +1268,18 @@ async function linkProviderEndpoint(request: Request, env: Env, ctx: ExecutionCo
     wallet_address: wallet_address,
     linked_at: new Date().toISOString()
   };
+
+  try {
+    await env.DB.prepare("INSERT INTO linked_identities (user_did, provider, provider_uid, email, wallet_address) VALUES (?, ?, ?, ?, ?)").bind(sub, provider, providerUid, email, wallet_address).run();
+  } catch (e) {
+    // Ignoring for now as per D1 logic.
+  }
+
+  try {
+    await env.DB.prepare("INSERT INTO linked_identities (user_did, provider, provider_uid, email, wallet_address) VALUES (?, ?, ?, ?, ?)").bind(sub, provider, providerUid, email, wallet_address).run();
+  } catch (e) {
+    // Ignoring for now as per D1 logic.
+  }
 
   await fetch(new URL('/rest/v1/user_identities', env.SUPABASE_URL).toString(), {
     method: 'POST',
