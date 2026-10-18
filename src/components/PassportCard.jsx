@@ -71,12 +71,13 @@ function PassportCard({
   isWalletLinked,
 }) {
   const destination = redirectUrl ? new URL(redirectUrl).hostname : '';
-  const appName = getAppNameFromUrl(redirectUrl);
+  // appName managed by state now
   const methodSelected = Boolean(selectedMethod);
   const walletFinalVerification = verificationStage === 'wallet-verify';
   const emailFinalVerification = verificationStage === 'email-verify';
 
   const [emailInput, setEmailInput] = useState('');
+  const [appName, setAppName] = useState('AXiM Ecosystem');
   const session = (() => { try { const cached = localStorage.getItem('optimistic_session'); return cached ? JSON.parse(cached) : null; } catch { return null; } })();
   const [sessionExpiryCountdown, setSessionExpiryCountdown] = useState(null);
 
@@ -285,7 +286,7 @@ const CopyableId = ({ text, children }) => {
       </p>
 
       <div className="sub-headline" style={{ marginTop: '16px', marginBottom: '16px', fontSize: '14px', color: 'var(--lime)', fontWeight: '600' }}>
-        Sign in to continue to {appName}
+        Sign in to continue to {appName || "AXiM Ecosystem"}
       </div>
 
       <div className="access-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500">

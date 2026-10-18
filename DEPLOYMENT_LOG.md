@@ -193,3 +193,7 @@ Deployment Log Updated - Production Telemetry Activation, Client Resilience & UI
 - Verified \`429 Too Many Requests\` explicitly include \`Retry-After: 10\` within the edge worker.
 - Monitored and successfully throttled requests intercepting 429 within \`src/services/passportClient.js\` and \`src/services/passportApi.js\` respectively utilizing the \`Retry-After\` header value.
 ## Sprint 5.2 - OTP Rate Limiting and IdP Linking\n\nTask 1: Rate limiting and flood protection\nTask 2: Identity Provider Linking\nTask 3: Cross-Tab State Sync Resilience\n
+
+## Sprint 6.1 - The Federation SDK & Multi-Tenant Scaffolding
+- Refactored the core `@axim/passport-sdk` to export a clean `AximPassportClient` and `PassportProvider` interface for downstream applications to safely verify dynamic single sign-on state.
+- Allowed applications to pass `app_id` metadata during redirects and implemented a secure public unauthenticated endpoint `/api/v1/apps/:id/metadata` to load destination scopes, removing generic generic "AXiM Ecosystem" prompt fallbacks for verified tenants.

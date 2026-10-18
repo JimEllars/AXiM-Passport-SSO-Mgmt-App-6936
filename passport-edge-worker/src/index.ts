@@ -2222,6 +2222,14 @@ if (request.method === 'GET' && url.pathname === '/.well-known/openid-configurat
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/google/callback') return await finishGoogle(request, env, ctx, url);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple') return await startApple(request, env, url);
       if (request.method === 'GET' && url.pathname === '/api/v1/auth/apple/callback') return await finishApple(request, env, ctx, url);
+
+      if (request.method === 'GET' && url.pathname.match(/^\/api\/v1\/apps\/([a-zA-Z0-9-]+)\/metadata$/)) {
+            const appId = url.pathname.split('/')[4];
+            const check = await env.DB.prepare('SELECT name, allowed_origins FROM apps WHERE id = ?').bind(appId).first();
+            if (!check) return json(request, env, { error: 'Not found' }, 404);
+            return json(request, env, { name: check.name, allowedOrigins: JSON.parse((check.allowed_origins as string) || '[]') });
+      }
+
       if (request.method === 'GET' && url.pathname === '/ready') return await readyEndpoint(request, env);
     } catch (e) {
       const err = e as Error;

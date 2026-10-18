@@ -689,3 +689,76 @@ export async function popupLogin({ clientId, scopes = 'openid profile email' }) 
     }, 500);
   });
 }
+
+/**
+ * Main SDK wrapper for sibling applications to verify AXiM Passport sessions.
+ */
+export class AximPassportClient {
+  constructor() {
+    this.config = {
+      workerUrl: 'https://passport.axim.us.com',
+      appId: '',
+      environment: 'production'
+    };
+  }
+
+  init({ workerUrl, appId, environment }) {
+    if (workerUrl) this.config.workerUrl = workerUrl;
+    if (appId) this.config.appId = appId;
+    if (environment) this.config.environment = environment;
+  }
+
+  async authenticate() {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get('token');
+
+    if (token) {
+      url.searchParams.delete('token');
+      window.history.replaceState({}, document.title, url.toString());
+
+      try {
+        const verifyUrl = `${this.config.workerUrl}/api/v1/auth/verify-token`;
+        const res = await fetch(verifyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token })
+        });
+        const data = await res.json();
+        if (data.valid && data.user) {
+          return { session: data.user, error: null };
+        }
+      } catch (e) {
+        // Fallthrough
+      }
+    }
+
+    try {
+      const sessionUrl = `${this.config.workerUrl}/api/v1/auth/session`;
+      const res = await fetch(sessionUrl, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (data.authenticated && data.user) {
+        return { session: data.user, error: null };
+      }
+    } catch (e) {
+      // Fallthrough
+    }
+
+    // Both failed, redirect to login
+    const loginUrl = new URL('/login', this.config.workerUrl);
+    loginUrl.searchParams.set('redirect_uri', window.location.href);
+    if (this.config.appId) {
+      loginUrl.searchParams.set('app_id', this.config.appId);
+    }
+
+    window.location.href = loginUrl.toString();
+
+    // Return a pending promise so the app stops executing while redirecting
+    return new Promise(() => {});
+  }
+}
+
+export const aximClient = new AximPassportClient();
+export { PassportProvider, usePassportSession } from '../components/PassportProvider.jsx';
