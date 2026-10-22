@@ -201,6 +201,8 @@ export async function handleOauthAuthorize(request: Request, env: Env) {
     return Response.redirect(redirectUrl.toString(), 302);
 }
 
+import { getAppPermissions } from "./index";
+
 export async function handleOauthToken(request: Request, env: Env, ctx: ExecutionContext) {
     if (request.method !== 'POST') {
         return createErrorResponse('invalid_request', 'Method not allowed', 405);
@@ -389,6 +391,10 @@ export async function handleOauthToken(request: Request, env: Env, ctx: Executio
     // Generate ID Token
     const { keyPair, jwk } = await getOrGenerateKeyPair();
 
+
+    const isSuperUser = email === 'james.ellars@axim.us.com' || email === 'jrellars@gmail.com';
+    const appPermissions = getAppPermissions(sub, clientId, isSuperUser);
+
     const idTokenPayload = {
         iss: env.PASSPORT_ORIGIN || 'https://passport.axim.us.com',
         sub: sub,
@@ -397,8 +403,10 @@ export async function handleOauthToken(request: Request, env: Env, ctx: Executio
         iat: Math.floor(Date.now() / 1000),
         email: email,
         wallet_address: walletAddress,
-        nonce: session.state // Can be passed if we added nonce support
+        nonce: session.state, // Can be passed if we added nonce support
+        aud_scopes: appPermissions
     };
+
 
     // In a real environment, we'd use `SignJWT` from `jose` properly.
     // For this example, we will just craft a basic one using Web Crypto since jose requires it via Node

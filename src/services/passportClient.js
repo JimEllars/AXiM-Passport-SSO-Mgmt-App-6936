@@ -761,4 +761,3 @@ export class AximPassportClient {
 }
 
 export const aximClient = new AximPassportClient();
-export { PassportProvider, usePassportSession } from '../components/PassportProvider.jsx';

@@ -408,6 +408,13 @@ async function verifyTurnstile(token: unknown, request: Request, env: Env, ctx?:
   }
 }
 
+
+export function getAppPermissions(userDid: string, appId: string, isSuperUser: boolean): string[] {
+  if (isSuperUser) return ["*"];
+  // Stubbed tenant permissions for Gold Release
+  return ["read:identity", "read:profile"];
+}
+
 async function signJwt(payload: Record<string, unknown>, secret: string): Promise<string> {
   const header = base64UrlEncode(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
   const body = base64UrlEncode(encoder.encode(JSON.stringify(payload)));
@@ -855,6 +862,9 @@ async function verifyTokenEndpoint(request: Request, env: Env, ctx: ExecutionCon
     }
   } catch(e) {}
 
+  const isSuperUser = role === 'super_user';
+  const audScopes = getAppPermissions(sub, payload.aud as string || '', isSuperUser);
+
   return json(request, env, {
     valid: true,
     user: {
@@ -865,7 +875,8 @@ async function verifyTokenEndpoint(request: Request, env: Env, ctx: ExecutionCon
       department: department,
       authorized_apps: authorized_apps,
       linked_identities: linked_identities,
-      session_expires_at: typeof payload.exp === 'number' ? payload.exp : null
+      session_expires_at: typeof payload.exp === 'number' ? payload.exp : null,
+      aud_scopes: payload.aud_scopes || audScopes
     }
   });
 }
