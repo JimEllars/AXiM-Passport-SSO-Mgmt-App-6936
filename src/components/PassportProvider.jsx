@@ -50,10 +50,22 @@ export const PassportProvider = ({ children, workerUrl, appId, environment = 'pr
 
   const logout = () => {
     // Basic logout handling
-    setSession(null);
     if (workerUrl) {
-      // In a real scenario you might also call a logout endpoint on the workerUrl
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(workerUrl + '/api/v1/auth/logout', JSON.stringify({ token: session?.token }));
+      } else {
+        fetch(workerUrl + '/api/v1/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ token: session?.token }),
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' }
+        }).catch(()=>{});
+      }
+
+      setSession(null);
       window.location.href = `${workerUrl}/login?redirect_uri=${encodeURIComponent(window.location.href)}`;
+    } else {
+      setSession(null);
     }
   };
 

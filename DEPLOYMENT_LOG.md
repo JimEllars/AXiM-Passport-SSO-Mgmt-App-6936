@@ -197,3 +197,8 @@ Deployment Log Updated - Production Telemetry Activation, Client Resilience & UI
 ## Sprint 6.1 - The Federation SDK & Multi-Tenant Scaffolding
 - Refactored the core `@axim/passport-sdk` to export a clean `AximPassportClient` and `PassportProvider` interface for downstream applications to safely verify dynamic single sign-on state.
 - Allowed applications to pass `app_id` metadata during redirects and implemented a secure public unauthenticated endpoint `/api/v1/apps/:id/metadata` to load destination scopes, removing generic generic "AXiM Ecosystem" prompt fallbacks for verified tenants.
+
+## Sprint 6.2 - RBAC Scope Injection and SDK Optimization
+- Implemented application-specific claims binding by extracting app permissions into `aud_scopes` within the token payload.
+- Standardized the central logout functionality using `navigator.sendBeacon` for edge session termination with a fallback to `fetch` with `keepalive: true`.
+- Optimized the `@axim/passport-sdk` build size by explicitly exporting the client and React components via `src/sdk.js` and externalizing `react`/`react-dom`.
